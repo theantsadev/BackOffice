@@ -1,3 +1,6 @@
+   create database projet_hotel;
+   \c projet_hotel;
+
 CREATE TABLE Hotel(
    id_hotel SERIAL,
    nom VARCHAR(50) ,

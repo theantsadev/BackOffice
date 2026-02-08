@@ -1,0 +1,28 @@
+# Ignorer les fichiers de build
+target/
+*.war
+*.jar
+!lib/*.jar
+
+# Ignorer les fichiers IDE
+.idea/
+*.iml
+.vscode/
+.settings/
+.project
+.classpath
+
+# Ignorer les fichiers de log
+*.log
+
+# Ignorer les fichiers de configuration locale
+database.properties.local
+
+# Ignorer les fichiers temporaires
+*.tmp
+*.bak
+*~
+
+# Ignorer les fichiers système
+.DS_Store
+Thumbs.db
