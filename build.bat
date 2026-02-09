@@ -38,7 +38,7 @@ echo Le fichier WAR a ete genere: target\backoffice.war
 echo.
 
 REM Deploiement automatique vers Tomcat
-set TOMCAT_HOME=E:\Etude\Etude\Outils\TOMCAT\apache-tomcat-10.1.28
+set TOMCAT_HOME=c:\Program Files\Apache Software Foundation\Tomcat 10.1
 set WEBAPPS_DIR=%TOMCAT_HOME%\webapps
 
 echo 3. Deploiement vers Tomcat...
