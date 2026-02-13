@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test API Véhicule - Sprint 2</title>
+    <style>
+        body { 
+            font-family: Arial, sans-serif; 
+            margin: 20px; 
+            background: #f5f5f5;
+        }
+        h1 {
+            color: #333;
+            border-bottom: 3px solid #007bff;
+            padding-bottom: 10px;
+        }
+        .section { 
+            margin: 20px 0; 
+            padding: 20px; 
+            border: 1px solid #ddd; 
+            background: white;
+            border-radius: 5px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .section h2 {
+            color: #007bff;
+            margin-top: 0;
+        }
+        input, select { 
+            margin: 5px; 
+            padding: 8px; 
+            border: 1px solid #ccc;
+            border-radius: 3px;
+            width: 200px;
+        }
+        button { 
+            padding: 10px 20px; 
+            background: #007bff; 
+            color: white; 
+            border: none; 
+            cursor: pointer;
+            border-radius: 3px;
+            margin-top: 10px;
+            font-weight: bold;
+        }
+        button:hover { 
+            background: #0056b3; 
+        }
+        pre { 
+            background: #f8f9fa; 
+            padding: 15px; 
+            overflow-x: auto;
+            border-left: 4px solid #007bff;
+            border-radius: 3px;
+            font-size: 12px;
+        }
+        .success { color: #28a745; font-weight: bold; }
+        .error { color: #dc3545; font-weight: bold; }
+        .info { 
+            background: #e7f3ff; 
+            padding: 10px; 
+            border-left: 4px solid #007bff;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>🚗 Test API Véhicule - Sprint 2</h1>
+    
+    <div class="info">
+        <strong>Base URL:</strong> http://localhost:8081/backoffice<br>
+        <strong>Status:</strong> <span id="serverStatus">Vérification...</span>
+    </div>
+
+    <div class="section">
+        <h2>1. Lister tous les véhicules (GET)</h2>
+        <p><strong>URL:</strong> GET /vehicules</p>
+        <button onclick="getAllVehicules()">📋 Récupérer la liste</button>
+        <pre id="listResult"></pre>
+    </div>
+
+    <div class="section">
+        <h2>2. Obtenir un véhicule par ID (GET)</h2>
+        <p><strong>URL:</strong> GET /vehicules/detail?id={id}</p>
+        <label>ID: <input type="number" id="getById" value="1"></label>
+        <button onclick="getVehiculeById()">🔍 Récupérer</button>
+        <pre id="getResult"></pre>
+    </div>
+
+    <div class="section">
+        <h2>3. Créer un véhicule (POST)</h2>
+        <p><strong>URL:</strong> POST /vehicules</p>
+        <div>
+            <label>Référence: <input type="text" id="createRef" value="VH-100" placeholder="Ex: VH-100"></label><br>
+            <label>Places: <input type="number" id="createPlace" value="5" min="1" max="50"></label><br>
+            <label>Carburant: 
+                <select id="createType">
+                    <option value="E">E - Essence</option>
+                    <option value="D">D - Diesel</option>
+                </select>
+            </label><br>
+            <button onclick="createVehicule()">➕ Créer</button>
+        </div>
+        <pre id="createResult"></pre>
+    </div>
+
+    <div class="section">
+        <h2>4. Modifier un véhicule (POST)</h2>
+        <p><strong>URL:</strong> POST /vehicules/update</p>
+        <div>
+            <label>ID: <input type="number" id="updateId" value="1"></label><br>
+            <label>Référence: <input type="text" id="updateRef" value="VH-001-MOD"></label><br>
+            <label>Places: <input type="number" id="updatePlace" value="6" min="1" max="50"></label><br>
+            <label>Carburant: 
+                <select id="updateType">
+                    <option value="E">E - Essence</option>
+                    <option value="D">D - Diesel</option>
+                </select>
+            </label><br>
+            <button onclick="updateVehicule()">✏️ Modifier</button>
+        </div>
+        <pre id="updateResult"></pre>
+    </div>
+
+    <div class="section">
+        <h2>5. Supprimer un véhicule (POST)</h2>
+        <p><strong>URL:</strong> POST /vehicules/delete</p>
+        <label>ID: <input type="number" id="deleteId" value="5"></label>
+        <button onclick="deleteVehicule()">🗑️ Supprimer</button>
+        <pre id="deleteResult"></pre>
+    </div>
+
+    <div class="section">
+        <h2>6. Test d'erreur - Type carburant invalide</h2>
+        <p>Tente de créer un véhicule avec un type de carburant invalide (ni D ni E)</p>
+        <button onclick="testInvalidCarburant()">⚠️ Tester erreur 400</button>
+        <pre id="errorTestResult"></pre>
+    </div>
+
+    <script>
+        const BASE_URL = 'http://localhost:8081/backoffice';
+
+        // Vérifier le statut du serveur au chargement
+        window.onload = async function() {
+            try {
+                const response = await fetch(`${BASE_URL}/hotels`);
+                if (response.ok) {
+                    document.getElementById('serverStatus').innerHTML = '<span class="success">✓ Serveur actif</span>';
+                } else {
+                    document.getElementById('serverStatus').innerHTML = '<span class="error">✗ Serveur inaccessible</span>';
+                }
+            } catch (error) {
+                document.getElementById('serverStatus').innerHTML = '<span class="error">✗ Serveur déconnecté - Démarrer avec: mvn jetty:run</span>';
+            }
+        };
+
+        function formatJSON(text) {
+            try {
+                return JSON.stringify(JSON.parse(text), null, 2);
+            } catch (e) {
+                return text;
+            }
+        }
+
+        async function getAllVehicules() {
+            document.getElementById('listResult').textContent = 'Chargement...';
+            try {
+                const response = await fetch(`${BASE_URL}/vehicules`);
+                const text = await response.text();
+                document.getElementById('listResult').textContent = formatJSON(text);
+            } catch (error) {
+                document.getElementById('listResult').textContent = '❌ Erreur: ' + error.message;
+            }
+        }
+
+        async function getVehiculeById() {
+            const id = document.getElementById('getById').value;
+            document.getElementById('getResult').textContent = 'Chargement...';
+            try {
+                const response = await fetch(`${BASE_URL}/vehicules/detail?id=${id}`);
+                const text = await response.text();
+                document.getElementById('getResult').textContent = formatJSON(text);
+            } catch (error) {
+                document.getElementById('getResult').textContent = '❌ Erreur: ' + error.message;
+            }
+        }
+
+        async function createVehicule() {
+            document.getElementById('createResult').textContent = 'Création en cours...';
+            const formData = new URLSearchParams({
+                reference: document.getElementById('createRef').value,
+                place: document.getElementById('createPlace').value,
+                type_carburant: document.getElementById('createType').value
+            });
+
+            try {
+                const response = await fetch(`${BASE_URL}/vehicules`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: formData
+                });
+                const text = await response.text();
+                document.getElementById('createResult').textContent = formatJSON(text);
+                
+                // Si succès, incrémenter la référence pour le prochain test
+                if (text.includes('"status":"success"')) {
+                    const currentRef = document.getElementById('createRef').value;
+                    const match = currentRef.match(/VH-(\d+)/);
+                    if (match) {
+                        const nextNum = parseInt(match[1]) + 1;
+                        document.getElementById('createRef').value = `VH-${String(nextNum).padStart(3, '0')}`;
+                    }
+                }
+            } catch (error) {
+                document.getElementById('createResult').textContent = '❌ Erreur: ' + error.message;
+            }
+        }
+
+        async function updateVehicule() {
+            document.getElementById('updateResult').textContent = 'Modification en cours...';
+            const formData = new URLSearchParams({
+                id: document.getElementById('updateId').value,
+                reference: document.getElementById('updateRef').value,
+                place: document.getElementById('updatePlace').value,
+                type_carburant: document.getElementById('updateType').value
+            });
+
+            try {
+                const response = await fetch(`${BASE_URL}/vehicules/update`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: formData
+                });
+                const text = await response.text();
+                document.getElementById('updateResult').textContent = formatJSON(text);
+            } catch (error) {
+                document.getElementById('updateResult').textContent = '❌ Erreur: ' + error.message;
+            }
+        }
+
+        async function deleteVehicule() {
+            document.getElementById('deleteResult').textContent = 'Suppression en cours...';
+            const formData = new URLSearchParams({
+                id: document.getElementById('deleteId').value
+            });
+
+            try {
+                const response = await fetch(`${BASE_URL}/vehicules/delete`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: formData
+                });
+                const text = await response.text();
+                document.getElementById('deleteResult').textContent = formatJSON(text);
+            } catch (error) {
+                document.getElementById('deleteResult').textContent = '❌ Erreur: ' + error.message;
+            }
+        }
+
+        async function testInvalidCarburant() {
+            document.getElementById('errorTestResult').textContent = 'Test en cours...';
+            const formData = new URLSearchParams({
+                reference: 'VH-ERROR-TEST',
+                place: 5,
+                type_carburant: 'X' // Type invalide
+            });
+
+            try {
+                const response = await fetch(`${BASE_URL}/vehicules`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: formData
+                });
+                const text = await response.text();
+                document.getElementById('errorTestResult').textContent = 
+                    '✓ Test réussi - Erreur attendue:\n\n' + formatJSON(text);
+            } catch (error) {
+                document.getElementById('errorTestResult').textContent = '❌ Erreur: ' + error.message;
+            }
+        }
+    </script>
+</body>
+</html>

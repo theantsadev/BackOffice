@@ -1,9 +1,16 @@
-E:\Etude\Etude\S5\Mr_Naina\Framework\Exam\BackOffice\src\main\java\com\hotel\controller\HotelController.java
-E:\Etude\Etude\S5\Mr_Naina\Framework\Exam\BackOffice\src\main\java\com\hotel\controller\ReservationController.java
-E:\Etude\Etude\S5\Mr_Naina\Framework\Exam\BackOffice\src\main\java\com\hotel\service\HotelService.java
-E:\Etude\Etude\S5\Mr_Naina\Framework\Exam\BackOffice\src\main\java\com\hotel\util\JsonUtil.java
-E:\Etude\Etude\S5\Mr_Naina\Framework\Exam\BackOffice\src\main\java\com\hotel\database\DatabaseConnection.java
-E:\Etude\Etude\S5\Mr_Naina\Framework\Exam\BackOffice\src\main\java\com\hotel\model\Hotel.java
-E:\Etude\Etude\S5\Mr_Naina\Framework\Exam\BackOffice\src\main\java\com\hotel\model\Reservation.java
-E:\Etude\Etude\S5\Mr_Naina\Framework\Exam\BackOffice\src\main\java\com\hotel\controller\PageController.java
-E:\Etude\Etude\S5\Mr_Naina\Framework\Exam\BackOffice\src\main\java\com\hotel\service\ReservationService.java
+D:\Projet Naina\BackOffice\src\main\java\com\hotel\model\Reservation.java
+D:\Projet Naina\BackOffice\src\main\java\com\hotel\controller\ReservationController.java
+D:\Projet Naina\BackOffice\src\main\java\com\hotel\Main.java
+D:\Projet Naina\BackOffice\src\main\java\com\hotel\model\Token.java
+D:\Projet Naina\BackOffice\src\main\java\com\hotel\controller\VehiculeController.java
+D:\Projet Naina\BackOffice\src\main\java\com\hotel\controller\PageController.java
+D:\Projet Naina\BackOffice\src\main\java\com\hotel\service\VehiculeService.java
+D:\Projet Naina\BackOffice\src\main\java\com\hotel\service\HotelService.java
+D:\Projet Naina\BackOffice\src\main\java\com\hotel\service\ReservationService.java
+D:\Projet Naina\BackOffice\src\main\java\com\hotel\service\TokenService.java
+D:\Projet Naina\BackOffice\src\main\java\com\hotel\model\Hotel.java
+D:\Projet Naina\BackOffice\src\main\java\com\hotel\controller\HotelController.java
+D:\Projet Naina\BackOffice\src\main\java\com\hotel\controller\TokenController.java
+D:\Projet Naina\BackOffice\src\main\java\com\hotel\database\DatabaseConnection.java
+D:\Projet Naina\BackOffice\src\main\java\com\hotel\model\Vehicule.java
+D:\Projet Naina\BackOffice\src\main\java\com\hotel\util\JsonUtil.java
