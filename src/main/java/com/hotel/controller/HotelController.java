@@ -6,6 +6,7 @@ import com.hotel.service.HotelService;
 import servlet.annotations.Controller;
 import servlet.annotations.Json;
 import servlet.annotations.mapping.GetMapping;
+import servlet.api.ApiResponse;
 
 import java.sql.SQLException;
 import java.util.List;
@@ -17,7 +18,12 @@ public class HotelController {
 
     @Json
     @GetMapping(value = "/hotels")
-    public List<Hotel> getAllHotels() throws SQLException {
-         return hotelService.getAllHotel();
+    public ApiResponse<?> getAllHotels() throws SQLException {
+        try {
+            List<Hotel> hotels = hotelService.getAllHotel();
+            return ApiResponse.success(hotels);
+        } catch (Exception e) {
+            return ApiResponse.error(500, e.getMessage(), null);
+        }
     }
 }

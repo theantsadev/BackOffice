@@ -8,8 +8,11 @@ import servlet.annotations.Json;
 import servlet.annotations.mapping.GetMapping;
 import servlet.annotations.mapping.PostMapping;
 import servlet.annotations.RequestParam;
+import servlet.api.ApiResponse;
 
+import java.sql.SQLException;
 import java.sql.Timestamp;
+import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.List;
@@ -21,28 +24,39 @@ public class ReservationController {
 
     @Json
     @GetMapping(value = "/reservations")
-    public List<Reservation> getReservations(@RequestParam(name = "date") String dateStr) throws Exception {
-        if (dateStr != null && !dateStr.isEmpty()) {
-            SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd");
-            Date date = sdf.parse(dateStr);
-            return reservationService.getReservationByDate(date);
-        } else {
-            return reservationService.getAllReservation();
+    public ApiResponse<?> getReservations(@RequestParam(name = "date") String dateStr) throws SQLException {
+        try {
+            if (dateStr != null && !dateStr.isEmpty()) {
+                SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd");
+                Date date = sdf.parse(dateStr);
+                List<Reservation> reservations = reservationService.getReservationByDate(date);
+                return ApiResponse.success(reservations);
+            } else {
+                List<Reservation> reservations = reservationService.getAllReservation();
+                return ApiResponse.success(reservations);
+            }
+        } catch (Exception e) {
+            return ApiResponse.error(500, e.getMessage(), null);
         }
     }
 
     @Json
     @PostMapping(value = "/reservations")
-    public Reservation reserver(
+    public ApiResponse<?> reserver(
             @RequestParam(name = "id_client") String id_client,
             @RequestParam(name = "nb_passager") int nb_passager,
             @RequestParam(name = "date_heure_arrivee") String date_heure_arrivee,
-            @RequestParam(name = "id_hotel") int id_hotel) throws Exception {
+            @RequestParam(name = "id_hotel") int id_hotel) throws SQLException {
 
-        SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm");
-        Date date = sdf.parse(date_heure_arrivee);
-        Timestamp timestamp = new Timestamp(date.getTime());
+        try {
+            SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm");
+            Date date = sdf.parse(date_heure_arrivee);
+            Timestamp timestamp = new Timestamp(date.getTime());
 
-        return reservationService.reserver(id_client, nb_passager, timestamp, id_hotel);
+            Reservation reservation = reservationService.reserver(id_client, nb_passager, timestamp, id_hotel);
+            return ApiResponse.success(reservation);
+        } catch (Exception e) {
+            return ApiResponse.error(500, e.getMessage(), null);
+        }
     }
 }

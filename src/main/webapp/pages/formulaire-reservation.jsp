@@ -116,6 +116,7 @@
                 });
                 
                 const result = await response.json();
+                console.log(result);
                 
                 const alertDiv = document.getElementById('alertMessage');
                 if (result.status === 'error' || result.error) {
