@@ -13,8 +13,8 @@ public class Reservation {
     public Reservation() {
     }
 
-    public Reservation(int id_reservation, String id_client, int nb_passager, 
-                      Timestamp date_heure_arrivee, int id_hotel) {
+    public Reservation(int id_reservation, String id_client, int nb_passager,
+            Timestamp date_heure_arrivee, int id_hotel) {
         this.id_reservation = id_reservation;
         this.id_client = id_client;
         this.nb_passager = nb_passager;
