@@ -23,7 +23,9 @@ public class HotelController {
             List<Hotel> hotels = hotelService.getAllHotel();
             return ApiResponse.success(hotels);
         } catch (Exception e) {
-            return ApiResponse.error(500, e.getMessage(), null);
+            String errorMessage = "Error fetching hotels: " + e.getMessage();
+            System.err.println(errorMessage);
+            return ApiResponse.error(500, errorMessage, null);
         }
     }
 }

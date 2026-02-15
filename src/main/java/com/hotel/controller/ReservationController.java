@@ -36,7 +36,9 @@ public class ReservationController {
                 return ApiResponse.success(reservations);
             }
         } catch (Exception e) {
-            return ApiResponse.error(500, e.getMessage(), null);
+            String errorMessage = "Error fetching reservations: " + e.getMessage();
+            System.err.println(errorMessage);
+            return ApiResponse.error(500, errorMessage, null);
         }
     }
 
@@ -56,7 +58,9 @@ public class ReservationController {
             Reservation reservation = reservationService.reserver(id_client, nb_passager, timestamp, id_hotel);
             return ApiResponse.success(reservation);
         } catch (Exception e) {
-            return ApiResponse.error(500, e.getMessage(), null);
+            String errorMessage = "Error creating reservation: " + e.getMessage();
+            System.err.println(errorMessage);
+            return ApiResponse.error(500, errorMessage, null);
         }
     }
 }
