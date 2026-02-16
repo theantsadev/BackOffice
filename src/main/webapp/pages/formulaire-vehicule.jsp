@@ -109,6 +109,17 @@
     <script>
         const BASE_URL = '${pageContext.request.contextPath}';
 
+        function escapeHtml(text) {
+            const map = {
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#039;'
+            };
+            return String(text).replace(/[&<>"']/g, m => map[m]);
+        }
+
         document.getElementById('vehiculeForm').addEventListener('submit', async function(e) {
             e.preventDefault();
 
@@ -123,7 +134,7 @@
             });
 
             try {
-                const response = await fetch(`${BASE_URL}/vehicules`, {
+                const response = await fetch(BASE_URL + '/vehicules', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/x-www-form-urlencoded'
@@ -137,35 +148,32 @@
                 const alertContainer = document.getElementById('alert-container');
 
                 if (data.status === 'success') {
-                    alertContainer.innerHTML = `
-                        <div class="alert alert-success alert-custom" role="alert">
-                            <strong>✅ Succès !</strong> Le véhicule a été créé avec succès.
-                            <br><small>Référence: ${data.data.reference} | Places: ${data.data.place} | ID: ${data.data.id}</small>
-                        </div>
-                    `;
+                    alertContainer.innerHTML = '' +
+                        '<div class="alert alert-success alert-custom" role="alert">' +
+                            '<strong>✅ Succès !</strong> Le véhicule a été créé avec succès.' +
+                            '<br><small>Référence: ' + escapeHtml(data.data.reference) + ' | Places: ' + escapeHtml(data.data.place) + ' | ID: ' + escapeHtml(data.data.id) + '</small>' +
+                        '</div>';
                     
                     // Réinitialiser le formulaire
                     document.getElementById('vehiculeForm').reset();
                     
                     // Rediriger après 2 secondes
                     setTimeout(() => {
-                        window.location.href = `${BASE_URL}/pages/liste-vehicules`;
+                        window.location.href = BASE_URL + '/pages/liste-vehicules';
                     }, 2000);
                 } else {
-                    alertContainer.innerHTML = `
-                        <div class="alert alert-danger alert-custom" role="alert">
-                            <strong>❌ Erreur !</strong> ${data.message}
-                        </div>
-                    `;
+                    alertContainer.innerHTML = '' +
+                        '<div class="alert alert-danger alert-custom" role="alert">' +
+                            '<strong>❌ Erreur !</strong> ' + escapeHtml(data.message) +
+                        '</div>';
                     submitBtn.disabled = false;
                     submitBtn.textContent = '➕ Créer le véhicule';
                 }
             } catch (error) {
-                document.getElementById('alert-container').innerHTML = `
-                    <div class="alert alert-danger alert-custom" role="alert">
-                        <strong>❌ Erreur de connexion !</strong> ${error.message}
-                    </div>
-                `;
+                document.getElementById('alert-container').innerHTML = '' +
+                    '<div class="alert alert-danger alert-custom" role="alert">' +
+                        '<strong>❌ Erreur de connexion !</strong> ' + escapeHtml(error.message) +
+                    '</div>';
                 submitBtn.disabled = false;
                 submitBtn.textContent = '➕ Créer le véhicule';
             }

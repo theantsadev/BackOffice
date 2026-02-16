@@ -137,7 +137,7 @@
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-        const BASE_URL = '${pageContext.request.contextPath}';
+        const contextPath = '${pageContext.request.contextPath}';
         let editModal;
 
         document.addEventListener('DOMContentLoaded', function() {
@@ -145,11 +145,12 @@
             loadVehicules();
         });
 
-        async function loadVehicules() {
+        async function loadVehicules(url = contextPath + '/vehicules') {
             try {
-                const response = await fetch(`${BASE_URL}/vehicules`);
+                const response = await fetch(url);
                 const text = await response.text();
                 const data = JSON.parse(text);
+                console.log('Data received:', data);
 
                 document.getElementById('loading').style.display = 'none';
 
@@ -159,6 +160,7 @@
                     showError('Erreur lors du chargement: ' + data.message);
                 }
             } catch (error) {
+                console.error('Error fetching vehicules:', error);
                 document.getElementById('loading').style.display = 'none';
                 showError('Erreur de connexion: ' + error.message);
             }
@@ -172,33 +174,59 @@
                 tbody.innerHTML = '<tr><td colspan="5" class="text-center py-4">Aucun véhicule trouvé</td></tr>';
             } else {
                 vehicules.forEach(vehicule => {
+                    const row = document.createElement('tr');
+                    
                     const carburantBadge = vehicule.typeCarburant === 'E' 
-                        ? '<span class="badge-essence">Essence</span>'
-                        : '<span class="badge-diesel">Diesel</span>';
+                        ? 'Essence'
+                        : 'Diesel';
+                    const badgeClass = vehicule.typeCarburant === 'E' 
+                        ? 'badge-essence'
+                        : 'badge-diesel';
 
-                    const row = `
-                        <tr>
-                            <td>${vehicule.id}</td>
-                            <td><strong>${vehicule.reference}</strong></td>
-                            <td>${vehicule.place} places</td>
-                            <td>${carburantBadge}</td>
-                            <td>
-                                <div class="btn-actions">
-                                    <button class="btn btn-sm btn-warning" onclick="openEditModal(${vehicule.id}, '${vehicule.reference}', ${vehicule.place}, '${vehicule.typeCarburant}')">
-                                        ✏️ Modifier
-                                    </button>
-                                    <button class="btn btn-sm btn-danger" onclick="deleteVehicule(${vehicule.id}, '${vehicule.reference}')">
-                                        🗑️ Supprimer
-                                    </button>
-                                </div>
-                            </td>
-                        </tr>
-                    `;
-                    tbody.innerHTML += row;
+                    row.innerHTML = '' +
+                        '<td>' + escapeHtml(vehicule.id) + '</td>' +
+                        '<td><strong>' + escapeHtml(vehicule.reference) + '</strong></td>' +
+                        '<td>' + escapeHtml(vehicule.place) + ' places</td>' +
+                        '<td><span class="' + badgeClass + '">' + escapeHtml(carburantBadge) + '</span></td>' +
+                        '<td>' +
+                            '<div class="btn-actions">' +
+                                '<button class="btn btn-sm btn-warning" data-id="' + vehicule.id + '" data-action="edit">' +
+                                    '✏️ Modifier' +
+                                '</button>' +
+                                '<button class="btn btn-sm btn-danger" data-id="' + vehicule.id + '" data-action="delete">' +
+                                    '🗑️ Supprimer' +
+                                '</button>' +
+                            '</div>' +
+                        '</td>';
+
+                    // Ajouter les event listeners
+                    const editBtn = row.querySelector('[data-action="edit"]');
+                    const deleteBtn = row.querySelector('[data-action="delete"]');
+                    
+                    editBtn.addEventListener('click', () => {
+                        openEditModal(vehicule.id, vehicule.reference, vehicule.place, vehicule.typeCarburant);
+                    });
+                    
+                    deleteBtn.addEventListener('click', () => {
+                        deleteVehicule(vehicule.id, vehicule.reference);
+                    });
+
+                    tbody.appendChild(row);
                 });
             }
 
             document.getElementById('vehicules-container').style.display = 'block';
+        }
+
+        function escapeHtml(text) {
+            const map = {
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#039;'
+            };
+            return String(text).replace(/[&<>"']/g, m => map[m]);
         }
 
         function openEditModal(id, reference, place, typeCarburant) {
@@ -209,7 +237,7 @@
             editModal.show();
         }
 
-        async function saveEdit() {
+        async function saveEdit(url = contextPath + '/vehicules/update') {
             const formData = new URLSearchParams({
                 id: document.getElementById('edit_id').value,
                 reference: document.getElementById('edit_reference').value,
@@ -218,7 +246,7 @@
             });
 
             try {
-                const response = await fetch(`${BASE_URL}/vehicules/update`, {
+                const response = await fetch(url, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                     body: formData
@@ -247,7 +275,7 @@
             const formData = new URLSearchParams({ id: id });
 
             try {
-                const response = await fetch(`${BASE_URL}/vehicules/delete`, {
+                const response = await fetch(contextPath + '/vehicules/delete', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                     body: formData
@@ -260,9 +288,11 @@
                     loadVehicules();
                     alert('Véhicule supprimé avec succès');
                 } else {
+                    console.error('Error deleting vehicule:', data);
                     alert('Erreur: ' + data.message);
                 }
             } catch (error) {
+                console.error('Error deleting vehicule:', error);
                 alert('Erreur: ' + error.message);
             }
         }
