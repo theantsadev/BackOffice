@@ -16,3 +16,18 @@ CREATE TABLE Reservation(
    PRIMARY KEY(id_reservation),
    FOREIGN KEY(id_hotel) REFERENCES Hotel(id_hotel)
 );
+
+CREATE TABLE Vehicule(
+   id SERIAL,
+   reference VARCHAR(50) NOT NULL UNIQUE,
+   place INTEGER NOT NULL,
+   type_carburant CHAR(1) NOT NULL CHECK (type_carburant IN ('D', 'E')),
+   PRIMARY KEY(id)
+);
+
+CREATE TABLE Token(
+   id SERIAL,
+   token VARCHAR(255) NOT NULL UNIQUE,
+   date_heure_expiration TIMESTAMP NOT NULL,
+   PRIMARY KEY(id)
+);

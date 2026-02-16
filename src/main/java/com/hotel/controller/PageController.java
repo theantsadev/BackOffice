@@ -40,4 +40,25 @@ public class PageController {
         mv.setView("pages/liste-reservations.jsp");
         return mv;
     }
+    
+    @GetMapping(value = "/pages/liste-vehicules")
+    public ModelView listeVehicules() {
+        ModelView mv = new ModelView();
+        mv.setView("pages/liste-vehicules.jsp");
+        return mv;
+    }
+    
+    @GetMapping(value = "/pages/formulaire-vehicule")
+    public ModelView formulaireVehicule() {
+        ModelView mv = new ModelView();
+        mv.setView("pages/formulaire-vehicule.jsp");
+        return mv;
+    }
+    
+    @GetMapping(value = "/pages/gestion-tokens")
+    public ModelView gestionTokens() {
+        ModelView mv = new ModelView();
+        mv.setView("pages/gestion-tokens.jsp");
+        return mv;
+    }
 }

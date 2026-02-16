@@ -1,8 +1,16 @@
 com\hotel\controller\HotelController.class
 com\hotel\service\HotelService.class
+com\hotel\controller\TokenController.class
+com\hotel\controller\VehiculeController.class
 com\hotel\database\DatabaseConnection.class
+com\hotel\model\Vehicule.class
+com\hotel\Main.class
 com\hotel\model\Hotel.class
 com\hotel\controller\ReservationController.class
+com\hotel\model\Token.class
+com\hotel\service\TokenService.class
+com\hotel\util\JsonUtil.class
 com\hotel\controller\PageController.class
 com\hotel\model\Reservation.class
+com\hotel\service\VehiculeService.class
 com\hotel\service\ReservationService.class

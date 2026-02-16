@@ -10,8 +10,7 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
         body {
-            /* background: linear-gradient(135deg, #17245f 0%, #0b0242 100%); */
-            background: linear-gradient(135deg, #5a5a5a 0%, #111111 100%);
+            background: linear-gradient(135deg, #17245f 0%, #0b0242 100%);
             min-height: 100vh;
             padding: 40px 20px;
         }
@@ -117,7 +116,6 @@
                 });
                 
                 const result = await response.json();
-                console.log(result);
                 
                 const alertDiv = document.getElementById('alertMessage');
                 if (result.status === 'error' || result.error) {

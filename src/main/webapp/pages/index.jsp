@@ -38,15 +38,29 @@
 </head>
 <body>
     <div class="main-card">
-        <h1 class="main-title text-center">Gestion des Réservations</h1>
+        <h1 class="main-title text-center">Gestion BackOffice</h1>
         <p class="text-center text-muted mb-4">Système de gestion hôtelière</p>
         
         <div class="d-grid gap-3">
+            <h5 class="text-muted mt-3">📅 Réservations</h5>
             <a href="${pageContext.request.contextPath}/pages/formulaire-reservation" class="btn btn-primary menu-btn">
                 Nouvelle Réservation
             </a>
             <a href="${pageContext.request.contextPath}/pages/liste-reservations" class="btn btn-outline-primary menu-btn">
                 Voir les Réservations
+            </a>
+            
+            <h5 class="text-muted mt-4">🚗 Véhicules</h5>
+            <a href="${pageContext.request.contextPath}/pages/formulaire-vehicule" class="btn btn-success menu-btn">
+                Nouveau Véhicule
+            </a>
+            <a href="${pageContext.request.contextPath}/pages/liste-vehicules" class="btn btn-outline-success menu-btn">
+                Voir les Véhicules
+            </a>
+            
+            <h5 class="text-muted mt-4">🔐 Tokens</h5>
+            <a href="${pageContext.request.contextPath}/pages/gestion-tokens" class="btn btn-outline-info menu-btn">
+                Gestion des Tokens
             </a>
         </div>
     </div>
