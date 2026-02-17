@@ -106,19 +106,9 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="${pageContext.request.contextPath}/js/api-helper.js"></script>
     <script>
         const BASE_URL = '${pageContext.request.contextPath}';
-
-        function escapeHtml(text) {
-            const map = {
-                '&': '&amp;',
-                '<': '&lt;',
-                '>': '&gt;',
-                '"': '&quot;',
-                "'": '&#039;'
-            };
-            return String(text).replace(/[&<>"']/g, m => map[m]);
-        }
 
         document.getElementById('vehiculeForm').addEventListener('submit', async function(e) {
             e.preventDefault();
@@ -134,7 +124,7 @@
             });
 
             try {
-                const response = await fetch(BASE_URL + '/vehicules', {
+                const data = await fetchApi(BASE_URL + '/vehicules', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/x-www-form-urlencoded'
@@ -142,33 +132,33 @@
                     body: formData
                 });
 
-                const text = await response.text();
-                const data = JSON.parse(text);
-
                 const alertContainer = document.getElementById('alert-container');
 
-                if (data.status === 'success') {
-                    alertContainer.innerHTML = '' +
-                        '<div class="alert alert-success alert-custom" role="alert">' +
-                            '<strong>✅ Succès !</strong> Le véhicule a été créé avec succès.' +
-                            '<br><small>Référence: ' + escapeHtml(data.data.reference) + ' | Places: ' + escapeHtml(data.data.place) + ' | ID: ' + escapeHtml(data.data.id) + '</small>' +
-                        '</div>';
-                    
-                    // Réinitialiser le formulaire
-                    document.getElementById('vehiculeForm').reset();
-                    
-                    // Rediriger après 2 secondes
-                    setTimeout(() => {
-                        window.location.href = BASE_URL + '/pages/liste-vehicules';
-                    }, 2000);
-                } else {
-                    alertContainer.innerHTML = '' +
-                        '<div class="alert alert-danger alert-custom" role="alert">' +
-                            '<strong>❌ Erreur !</strong> ' + escapeHtml(data.message) +
-                        '</div>';
-                    submitBtn.disabled = false;
-                    submitBtn.textContent = '➕ Créer le véhicule';
-                }
+                handleApiResponse(data,
+                    (vehiculeData) => {
+                        alertContainer.innerHTML = '' +
+                            '<div class="alert alert-success alert-custom" role="alert">' +
+                                '<strong>✅ Succès !</strong> Le véhicule a été créé avec succès.' +
+                                '<br><small>Référence: ' + escapeHtml(vehiculeData.reference) + ' | Places: ' + escapeHtml(vehiculeData.place) + ' | ID: ' + escapeHtml(vehiculeData.id) + '</small>' +
+                            '</div>';
+                        
+                        // Réinitialiser le formulaire
+                        document.getElementById('vehiculeForm').reset();
+                        
+                        // Rediriger après 2 secondes
+                        setTimeout(() => {
+                            window.location.href = BASE_URL + '/pages/liste-vehicules';
+                        }, 2000);
+                    },
+                    (code, message) => {
+                        alertContainer.innerHTML = '' +
+                            '<div class="alert alert-danger alert-custom" role="alert">' +
+                                '<strong>❌ Erreur !</strong> ' + escapeHtml(message) +
+                            '</div>';
+                        submitBtn.disabled = false;
+                        submitBtn.textContent = '➕ Créer le véhicule';
+                    }
+                );
             } catch (error) {
                 document.getElementById('alert-container').innerHTML = '' +
                     '<div class="alert alert-danger alert-custom" role="alert">' +
