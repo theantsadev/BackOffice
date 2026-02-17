@@ -10,7 +10,8 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
         body {
-            background: linear-gradient(135deg, #17245f 0%, #0b0242 100%);
+            /* background: linear-gradient(135deg, #17245f 0%, #0b0242 100%); */
+            background: linear-gradient(135deg, #5a5a5a 0%, #111111 100%);
             min-height: 100vh;
             padding: 40px 20px;
         }
@@ -97,6 +98,7 @@
     </div>
     
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="${pageContext.request.contextPath}/js/api-helper.js"></script>
     <script>
         const contextPath = '${pageContext.request.contextPath}';
         
@@ -104,34 +106,36 @@
             e.preventDefault();
             
             const formData = new FormData(this);
-            const data = Object.fromEntries(formData.entries());
+            const urlEncodedData = new URLSearchParams(formData);
             
             try {
-                const response = await fetch(contextPath + '/reservations', {
+                const result = await fetchApi(contextPath + '/reservations', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/x-www-form-urlencoded',
                     },
-                    body: new URLSearchParams(data)
+                    body: urlEncodedData
                 });
                 
-                const result = await response.json();
-                
                 const alertDiv = document.getElementById('alertMessage');
-                if (result.status === 'error' || result.error) {
-                    alertDiv.className = 'alert alert-danger alert-custom';
-                    alertDiv.textContent = 'Erreur: ' + (result.error || result.message || 'Une erreur est survenue');
-                    alertDiv.style.display = 'block';
-                } else {
-                    alertDiv.className = 'alert alert-success alert-custom';
-                    alertDiv.textContent = 'Réservation effectuée avec succès!';
-                    alertDiv.style.display = 'block';
-                    this.reset();
-                    
-                    setTimeout(() => {
-                        window.location.href = contextPath + '/pages/liste-reservations';
-                    }, 1500);
-                }
+                
+                handleApiResponse(result,
+                    () => {
+                        alertDiv.className = 'alert alert-success alert-custom';
+                        alertDiv.textContent = 'Réservation effectuée avec succès!';
+                        alertDiv.style.display = 'block';
+                        document.getElementById('reservationForm').reset();
+                        
+                        setTimeout(() => {
+                            window.location.href = contextPath + '/pages/liste-reservations';
+                        }, 1500);
+                    },
+                    (code, message) => {
+                        alertDiv.className = 'alert alert-danger alert-custom';
+                        alertDiv.textContent = 'Erreur: ' + message;
+                        alertDiv.style.display = 'block';
+                    }
+                );
             } catch (error) {
                 const alertDiv = document.getElementById('alertMessage');
                 alertDiv.className = 'alert alert-danger alert-custom';

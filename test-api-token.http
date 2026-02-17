@@ -1,0 +1,51 @@
+### === TOKENS API ===
+
+### 1. Générer un nouveau token (1 heure)
+POST http://localhost:8080/backoffice/tokens/generate
+Content-Type: application/x-www-form-urlencoded
+
+expiration_minutes=60
+
+### 2. Générer un token avec expiration custom (2 heures)
+POST http://localhost:8080/backoffice/tokens/generate
+Content-Type: application/x-www-form-urlencoded
+
+expiration_minutes=120
+
+### 3. Lister tous les tokens
+GET http://localhost:8080/backoffice/tokens
+
+### 4. Valider un token (remplacer TOKEN_VALUE)
+POST http://localhost:8080/backoffice/tokens/validate
+Content-Type: application/x-www-form-urlencoded
+
+token=TOKEN_VALUE
+
+### 5. Nettoyer les tokens expirés
+POST http://localhost:8080/backoffice/tokens/cleanup
+
+### 6. Supprimer un token par ID
+POST http://localhost:8080/backoffice/tokens/delete
+Content-Type: application/x-www-form-urlencoded
+
+id=1
+
+### === RESERVATIONS API (avec authentification token) ===
+
+### 7. Récupérer TOUTES les réservations (avec token valide)
+GET http://localhost:8080/backoffice/reservations?token=8ae808d4-2a58-431b-971a-daf124c92360
+
+### 8. Récupérer les réservations par DATE (avec token valide)
+GET http://localhost:8080/backoffice/reservations?token=8ae808d4-2a58-431b-971a-daf124c92360&date=2024-02-17
+
+### 9. ERREUR 403: Sans token
+GET http://localhost:8080/backoffice/reservations
+
+### 10. ERREUR 403: Avec token invalide
+GET http://localhost:8080/backoffice/reservations?token=aa9050db-7101-43fe-bb05-e0e737c6538a
+
+### 11. Créer une réservation
+POST http://localhost:8080/backoffice/reservations
+Content-Type: application/x-www-form-urlencoded
+
+id_client=5001&nb_passager=3&date_heure_arrivee=2024-02-20T15:30&id_hotel=1
