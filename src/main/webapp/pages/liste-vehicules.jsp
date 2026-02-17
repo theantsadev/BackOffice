@@ -136,6 +136,7 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="${pageContext.request.contextPath}/js/api-helper.js"></script>
     <script>
         const contextPath = '${pageContext.request.contextPath}';
         let editModal;
@@ -147,22 +148,21 @@
 
         async function loadVehicules(url = contextPath + '/vehicules') {
             try {
-                const response = await fetch(url);
-                const text = await response.text();
-                const data = JSON.parse(text);
-                console.log('Data received:', data);
-
+                const data = await fetchApi(url);
                 document.getElementById('loading').style.display = 'none';
-
-                if (data.status === 'success') {
-                    displayVehicules(data.data);
-                } else {
-                    showError('Erreur lors du chargement: ' + data.message);
-                }
+                
+                handleApiResponse(data, 
+                    (vehicules) => displayVehicules(vehicules),
+                    (code, message) => {
+                        const errorDiv = document.getElementById('error-message');
+                        errorDiv.textContent = message;
+                        errorDiv.style.display = 'block';
+                    }
+                );
             } catch (error) {
                 console.error('Error fetching vehicules:', error);
                 document.getElementById('loading').style.display = 'none';
-                showError('Erreur de connexion: ' + error.message);
+                showApiError(500, 'Erreur de connexion: ' + error.message);
             }
         }
 
@@ -218,17 +218,6 @@
             document.getElementById('vehicules-container').style.display = 'block';
         }
 
-        function escapeHtml(text) {
-            const map = {
-                '&': '&amp;',
-                '<': '&lt;',
-                '>': '&gt;',
-                '"': '&quot;',
-                "'": '&#039;'
-            };
-            return String(text).replace(/[&<>"']/g, m => map[m]);
-        }
-
         function openEditModal(id, reference, place, typeCarburant) {
             document.getElementById('edit_id').value = id;
             document.getElementById('edit_reference').value = reference;
@@ -246,22 +235,20 @@
             });
 
             try {
-                const response = await fetch(url, {
+                const data = await fetchApi(url, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                     body: formData
                 });
 
-                const text = await response.text();
-                const data = JSON.parse(text);
-
-                if (data.status === 'success') {
-                    editModal.hide();
-                    loadVehicules();
-                    alert('Véhicule modifié avec succès');
-                } else {
-                    alert('Erreur: ' + data.message);
-                }
+                handleApiResponse(data,
+                    () => {
+                        editModal.hide();
+                        loadVehicules();
+                        alert('Véhicule modifié avec succès');
+                    },
+                    (code, message) => alert('Erreur: ' + message)
+                );
             } catch (error) {
                 alert('Erreur: ' + error.message);
             }
@@ -275,32 +262,23 @@
             const formData = new URLSearchParams({ id: id });
 
             try {
-                const response = await fetch(contextPath + '/vehicules/delete', {
+                const data = await fetchApi(contextPath + '/vehicules/delete', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                     body: formData
                 });
 
-                const text = await response.text();
-                const data = JSON.parse(text);
-
-                if (data.status === 'success') {
-                    loadVehicules();
-                    alert('Véhicule supprimé avec succès');
-                } else {
-                    console.error('Error deleting vehicule:', data);
-                    alert('Erreur: ' + data.message);
-                }
+                handleApiResponse(data,
+                    () => {
+                        loadVehicules();
+                        alert('Véhicule supprimé avec succès');
+                    },
+                    (code, message) => alert('Erreur: ' + message)
+                );
             } catch (error) {
                 console.error('Error deleting vehicule:', error);
                 alert('Erreur: ' + error.message);
             }
-        }
-
-        function showError(message) {
-            const errorDiv = document.getElementById('error-message');
-            errorDiv.textContent = message;
-            errorDiv.style.display = 'block';
         }
     </script>
 </body>

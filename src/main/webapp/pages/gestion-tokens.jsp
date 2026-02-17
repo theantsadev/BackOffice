@@ -187,6 +187,7 @@
         </div>
 
         <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+        <script src="${pageContext.request.contextPath}/js/api-helper.js"></script>
         <script>
             const BASE_URL = '${pageContext.request.contextPath}';
             let tokenModal;
@@ -198,20 +199,22 @@
 
             async function loadTokens() {
                 try {
-                    const response = await fetch(BASE_URL + '/tokens');
-                    const text = await response.text();
-                    const data = JSON.parse(text);
-
+                    const data = await fetchApi(BASE_URL + '/tokens');
                     document.getElementById('loading').style.display = 'none';
-
-                    if (data.status === 'success') {
-                        displayTokens(data.data);
-                    } else {
-                        showError('Erreur lors du chargement: ' + data.message);
-                    }
+                    
+                    handleApiResponse(data,
+                        (tokens) => displayTokens(tokens),
+                        (code, message) => {
+                            const errorDiv = document.getElementById('error-message');
+                            errorDiv.textContent = message;
+                            errorDiv.style.display = 'block';
+                        }
+                    );
                 } catch (error) {
                     document.getElementById('loading').style.display = 'none';
-                    showError('Erreur de connexion: ' + error.message);
+                    const errorDiv = document.getElementById('error-message');
+                    errorDiv.textContent = 'Erreur de connexion: ' + error.message;
+                    errorDiv.style.display = 'block';
                 }
             }
 
@@ -258,22 +261,20 @@
                         expiration_minutes: expirationMinutes
                     });
 
-                    const response = await fetch(BASE_URL + '/tokens/generate', {
+                    const data = await fetchApi(BASE_URL + '/tokens/generate', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                         body: formData
                     });
 
-                    const text = await response.text();
-                    const data = JSON.parse(text);
-
-                    if (data.status === 'success') {
-                        var formattedDate = new Date(data.data.dateHeureExpiration).toLocaleString('fr-FR');
-                        alert('✅ Token généré avec succès !\n\nToken: ' + data.data.token.substring(0, 30) + '...\nExpiration: ' + formattedDate);
-                        loadTokens();
-                    } else {
-                        alert('❌ Erreur: ' + data.message);
-                    }
+                    handleApiResponse(data,
+                        (tokenData) => {
+                            var formattedDate = new Date(tokenData.dateHeureExpiration).toLocaleString('fr-FR');
+                            alert('✅ Token généré avec succès !\n\nToken: ' + tokenData.token.substring(0, 30) + '...\nExpiration: ' + formattedDate);
+                            loadTokens();
+                        },
+                        (code, message) => alert('❌ Erreur: ' + message)
+                    );
                 } catch (error) {
                     alert('❌ Erreur: ' + error.message);
                 }
@@ -291,20 +292,20 @@
                 try {
                     const formData = new URLSearchParams({ token: tokenValue });
 
-                    const response = await fetch(BASE_URL + '/tokens/validate', {
+                    const data = await fetchApi(BASE_URL + '/tokens/validate', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                         body: formData
                     });
 
-                    const text = await response.text();
-                    const data = JSON.parse(text);
-
-                    if (data.status === 'success') {
-                        resultDiv.innerHTML = '<div class="alert alert-success">&#x2705; ' + data.data + '</div>';
-                    } else {
-                        resultDiv.innerHTML = '<div class="alert alert-danger">&#x274C; ' + data.message + '</div>';
-                    }
+                    handleApiResponse(data,
+                        (message) => {
+                            resultDiv.innerHTML = '<div class="alert alert-success">&#x2705; ' + message + '</div>';
+                        },
+                        (code, message) => {
+                            resultDiv.innerHTML = '<div class="alert alert-danger">&#x274C; ' + message + '</div>';
+                        }
+                    );
                 } catch (error) {
                     resultDiv.innerHTML = '<div class="alert alert-danger">❌ Erreur: ' + error.message + '</div>';
                 }
@@ -316,21 +317,21 @@
                 }
 
                 try {
-                    const response = await fetch(BASE_URL + '/tokens/cleanup', {
+                    const data = await fetchApi(BASE_URL + '/tokens/cleanup', {
                         method: 'POST'
                     });
 
-                    const text = await response.text();
-                    const data = JSON.parse(text);
-
                     const resultDiv = document.getElementById('cleanup-result');
 
-                    if (data.status === 'success') {
-                        resultDiv.innerHTML = '<div class="alert alert-success">&#x2705; ' + data.data + '</div>';
-                        loadTokens();
-                    } else {
-                        resultDiv.innerHTML = '<div class="alert alert-danger">&#x274C; ' + data.message + '</div>';
-                    }
+                    handleApiResponse(data,
+                        (message) => {
+                            resultDiv.innerHTML = '<div class="alert alert-success">&#x2705; ' + message + '</div>';
+                            loadTokens();
+                        },
+                        (code, message) => {
+                            resultDiv.innerHTML = '<div class="alert alert-danger">&#x274C; ' + message + '</div>';
+                        }
+                    );
                 } catch (error) {
                     document.getElementById('cleanup-result').innerHTML = '<div class="alert alert-danger">❌ Erreur: ' + error.message + '</div>';
                 }
@@ -344,21 +345,19 @@
                 const formData = new URLSearchParams({ id: id });
 
                 try {
-                    const response = await fetch(BASE_URL + '/tokens/delete', {
+                    const data = await fetchApi(BASE_URL + '/tokens/delete', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                         body: formData
                     });
 
-                    const text = await response.text();
-                    const data = JSON.parse(text);
-
-                    if (data.status === 'success') {
-                        loadTokens();
-                        alert('Token supprimé avec succès');
-                    } else {
-                        alert('Erreur: ' + data.message);
-                    }
+                    handleApiResponse(data,
+                        () => {
+                            loadTokens();
+                            alert('Token supprimé avec succès');
+                        },
+                        (code, message) => alert('Erreur: ' + message)
+                    );
                 } catch (error) {
                     alert('❌ Erreur: ' + error.message);
                 }
@@ -374,12 +373,6 @@
                 tokenText.select();
                 document.execCommand('copy');
                 alert('Token copié dans le presse-papiers !');
-            }
-
-            function showError(message) {
-                const errorDiv = document.getElementById('error-message');
-                errorDiv.textContent = message;
-                errorDiv.style.display = 'block';
             }
         </script>
     </body>

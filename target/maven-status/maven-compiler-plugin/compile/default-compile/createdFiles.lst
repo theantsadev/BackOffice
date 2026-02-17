@@ -9,7 +9,6 @@ com\hotel\model\Hotel.class
 com\hotel\controller\ReservationController.class
 com\hotel\model\Token.class
 com\hotel\service\TokenService.class
-com\hotel\util\JsonUtil.class
 com\hotel\controller\PageController.class
 com\hotel\model\Reservation.class
 com\hotel\service\VehiculeService.class
