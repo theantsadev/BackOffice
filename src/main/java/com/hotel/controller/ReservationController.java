@@ -2,6 +2,7 @@ package com.hotel.controller;
 
 import com.hotel.model.Reservation;
 import com.hotel.service.ReservationService;
+import com.hotel.service.TokenService;
 
 import servlet.annotations.Controller;
 import servlet.annotations.Json;
@@ -21,10 +22,23 @@ import java.util.List;
 public class ReservationController {
 
     private ReservationService reservationService = new ReservationService();
+    private TokenService tokenService = new TokenService();
 
     @Json
     @GetMapping(value = "/reservations")
-    public ApiResponse<?> getReservations(@RequestParam(name = "date") String dateStr) throws SQLException {
+    public ApiResponse<?> getReservations(
+            @RequestParam(name = "token") String token,
+            @RequestParam(name = "date") String dateStr) throws SQLException {
+        
+        // Vérifier le token
+        if (token == null || token.isEmpty()) {
+            return ApiResponse.error(403, "Token manquant", null);
+        }
+        
+        if (!tokenService.isTokenValid(token)) {
+            return ApiResponse.error(403, "Token invalide ou expiré", null);
+        }
+        
         try {
             if (dateStr != null && !dateStr.isEmpty()) {
                 SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd");

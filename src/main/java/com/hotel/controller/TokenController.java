@@ -33,7 +33,8 @@ public class TokenController {
 
     @Json
     @PostMapping(value = "/tokens/generate")
-    public ApiResponse<?> generateToken(@RequestParam(name = "expiration_minutes") String expirationMinutesStr) throws SQLException {
+    public ApiResponse<?> generateToken(@RequestParam(name = "expiration_minutes") String expirationMinutesStr)
+            throws SQLException {
         try {
             int expirationMinutes = 60; // Par défaut 1 heure
             if (expirationMinutesStr != null && !expirationMinutesStr.isEmpty()) {
@@ -54,7 +55,7 @@ public class TokenController {
     public ApiResponse<?> validateToken(@RequestParam(name = "token") String tokenValue) throws SQLException {
         try {
             boolean isValid = tokenService.isTokenValid(tokenValue);
-            
+
             if (isValid) {
                 return ApiResponse.success("Token valide");
             } else {
