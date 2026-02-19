@@ -46,12 +46,3 @@ BackOffice (meme base)
  - script d'insertion de hotel (initialisation) 
     
 
-FrontOffice (meme base) (spring mvc , miantso api)
- - liste reservation + recherche par date (pas datetime) 
-   affichage 
-   - creer page misy tableau de liste reservation 
-   - pour chaque reservation , on affiche les infos
-
-   integration
-   - appel api JSON sprint 9 de getAllReservation() 
-   - appel api JSON de getReservationByDate(Date date) 
