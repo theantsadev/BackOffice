@@ -90,62 +90,71 @@
     <script src="${pageContext.request.contextPath}/js/api-helper.js"></script>
     <script>
         // Récupérer le token depuis localStorage ou sessionStorage
-        const token = localStorage.getItem('apiToken') || sessionStorage.getItem('apiToken') || '';
+        const token = localStorage.getItem('api_token') || sessionStorage.getItem('api_token') || '';
         
         async function loadReservations() {
-            const loadingDiv = document.getElementById('loadingDiv');
-            const errorDiv = document.getElementById('errorDiv');
-            const tableContainer = document.getElementById('tableContainer');
-            const emptyDiv = document.getElementById('emptyDiv');
-            
-            loadingDiv.style.display = 'block';
-            errorDiv.style.display = 'none';
-            tableContainer.style.display = 'none';
-            emptyDiv.style.display = 'none';
-            
-            try {
-                const response = await fetch('${pageContext.request.contextPath}/reservations/non-assignees?token=' + token);
-                const data = await response.json();
-                
-                loadingDiv.style.display = 'none';
-                
-                if (data.status === 'error') {
-                    errorDiv.textContent = data.message;
+                const loadingDiv = document.getElementById('loadingDiv');
+                const errorDiv = document.getElementById('errorDiv');
+                const tableContainer = document.getElementById('tableContainer');
+                const emptyDiv = document.getElementById('emptyDiv');
+
+                // Vérifier la présence du token côté client
+                if (!token || token.trim() === '') {
+                    loadingDiv.style.display = 'none';
+                    tableContainer.style.display = 'none';
+                    emptyDiv.style.display = 'none';
+                    errorDiv.innerHTML = 'Token manquant. Générez ou collez un token dans <a href="' +
+                        '${pageContext.request.contextPath}/pages/gestion-tokens">Gestion Tokens</a> puis rechargez la page.';
                     errorDiv.style.display = 'block';
                     return;
                 }
-                
-                const reservations = data.data || [];
-                
-                if (reservations.length === 0) {
-                    emptyDiv.style.display = 'block';
-                    return;
-                }
-                
-                const tbody = document.getElementById('reservationTableBody');
-                tbody.innerHTML = '';
-                
-                reservations.forEach(r => {
-                    const dateArrivee = new Date(r.date_heure_arrivee).toLocaleString('fr-FR');
-                    
-                    const row = document.createElement('tr');
-                    row.id = 'row-' + r.id_reservation;
-                    row.innerHTML = `
-                        <td>${r.id_reservation}</td>
-                        <td>${r.id_client}</td>
-                        <td>${r.nb_passager}</td>
-                        <td>${dateArrivee}</td>
-                        <td>${r.nom_hotel || '-'}</td>
-                        <td>
-                            <button class="btn btn-primary btn-assign" onclick="assignerReservation(${r.id_reservation})">
-                                Assigner
-                            </button>
-                        </td>
-                    `;
-                    tbody.appendChild(row);
+
+                loadingDiv.style.display = 'block';
+                errorDiv.style.display = 'none';
+                tableContainer.style.display = 'none';
+                emptyDiv.style.display = 'none';
+            
+            try {
+                const data = await fetchApi('${pageContext.request.contextPath}/reservations/non-assignees');
+                console.log('Réservations non assignées (raw):', data);
+                loadingDiv.style.display = 'none';
+
+                handleApiResponse(data, (reservations) => {
+                    reservations = reservations || [];
+                    if (reservations.length === 0) {
+                        emptyDiv.style.display = 'block';
+                        return;
+                    }
+
+                    const tbody = document.getElementById('reservationTableBody');
+                    tbody.innerHTML = '';
+
+                    reservations.forEach(r => {
+                        const dateArrivee = new Date(r.date_heure_arrivee).toLocaleString('fr-FR');
+
+                        const row = document.createElement('tr');
+                        row.id = 'row-' + r.id_reservation;
+                        row.innerHTML = `
+                            <td>${r.id_reservation}</td>
+                            <td>${r.id_client}</td>
+                            <td>${r.nb_passager}</td>
+                            <td>${dateArrivee}</td>
+                            <td>${r.nom_hotel || '-'}</td>
+                            <td>
+                                <button class="btn btn-primary btn-assign" onclick="assignerReservation(${r.id_reservation})">
+                                    Assigner
+                                </button>
+                            </td>
+                        `;
+                        tbody.appendChild(row);
+                    });
+
+                    tableContainer.style.display = 'block';
+                }, (code, message) => {
+                    errorDiv.innerHTML = message;
+                    errorDiv.style.display = 'block';
                 });
-                
-                tableContainer.style.display = 'block';
+
             } catch (error) {
                 loadingDiv.style.display = 'none';
                 errorDiv.textContent = 'Erreur de connexion: ' + error.message;
@@ -170,25 +179,21 @@
                 formData.append('token', token);
                 formData.append('id_reservation', idReservation);
                 
-                const response = await fetch('${pageContext.request.contextPath}/planifications', {
-                    method: 'POST',
-                    body: formData
-                });
-                const data = await response.json();
-                
-                if (data.status === 'error') {
-                    errorDiv.textContent = 'Erreur pour la réservation ' + idReservation + ': ' + data.message;
+                const data = await fetchApi('${pageContext.request.contextPath}/planifications', { method: 'POST', body: formData });
+
+                handleApiResponse(data, (planification) => {
+                    // Succès - retirer la ligne du tableau
+                    successDiv.textContent = 'Réservation ' + idReservation + ' assignée avec succès !';
+                    successDiv.style.display = 'block';
+
+                    document.getElementById('row-' + idReservation).remove();
+                }, (code, message) => {
+                    errorDiv.textContent = 'Erreur pour la réservation ' + idReservation + ': ' + message;
                     errorDiv.style.display = 'block';
                     button.disabled = false;
                     button.textContent = 'Assigner';
                     return;
-                }
-                
-                // Succès - retirer la ligne du tableau
-                successDiv.textContent = 'Réservation ' + idReservation + ' assignée avec succès !';
-                successDiv.style.display = 'block';
-                
-                document.getElementById('row-' + idReservation).remove();
+                });
                 
                 // Vérifier s'il reste des réservations
                 const tbody = document.getElementById('reservationTableBody');
