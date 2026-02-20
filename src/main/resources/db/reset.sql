@@ -16,13 +16,18 @@ CREATE DATABASE projet_hotel;
 -- Se connecter à la nouvelle base
 \c projet_hotel;
 
--- Créer les tables
+-- ===========================================
+-- CRÉATION DES TABLES
+-- ===========================================
+
+-- Table Hotel
 CREATE TABLE Hotel(
    id_hotel SERIAL,
    nom VARCHAR(50),
    PRIMARY KEY(id_hotel)
 );
 
+-- Table Reservation
 CREATE TABLE Reservation(
    id_reservation SERIAL,
    nb_passager INTEGER,
@@ -32,6 +37,65 @@ CREATE TABLE Reservation(
    PRIMARY KEY(id_reservation),
    FOREIGN KEY(id_hotel) REFERENCES Hotel(id_hotel)
 );
+
+-- Table Vehicule
+CREATE TABLE Vehicule (
+   id SERIAL,
+   reference VARCHAR(50) NOT NULL UNIQUE,
+   place INTEGER NOT NULL,
+   type_carburant CHAR(1) NOT NULL CHECK (type_carburant IN ('D', 'E')),
+   PRIMARY KEY (id)
+);
+
+-- Table Token
+CREATE TABLE Token (
+   id SERIAL,
+   token VARCHAR(255) NOT NULL UNIQUE,
+   date_heure_expiration TIMESTAMP NOT NULL,
+   PRIMARY KEY (id)
+);
+
+-- Table Parametre (accès par base uniquement, pas de CRUD)
+CREATE TABLE Parametre (
+   id_parametre SERIAL,
+   cle VARCHAR(100) NOT NULL UNIQUE,
+   valeur DOUBLE PRECISION NOT NULL,
+   unite VARCHAR(50),
+   PRIMARY KEY (id_parametre)
+);
+
+-- Table Distance
+-- Note: La distance A→B = B→A. On n'insère qu'une seule direction (from_hotel < to_hotel par convention)
+CREATE TABLE Distance (
+   id_distance SERIAL,
+   from_hotel INTEGER NOT NULL,
+   to_hotel INTEGER NOT NULL,
+   valeur DOUBLE PRECISION NOT NULL,
+   PRIMARY KEY (id_distance),
+   CONSTRAINT fk_from_hotel FOREIGN KEY (from_hotel) REFERENCES Hotel(id_hotel),
+   CONSTRAINT fk_to_hotel FOREIGN KEY (to_hotel) REFERENCES Hotel(id_hotel),
+   CONSTRAINT unique_distance UNIQUE (from_hotel, to_hotel),
+   CONSTRAINT check_from_lt_to CHECK (from_hotel < to_hotel)
+);
+
+-- Table Planification
+CREATE TABLE Planification (
+   id_planification SERIAL,
+   id_reservation INTEGER NOT NULL,
+   id_vehicule INTEGER NOT NULL,
+   date_heure_depart_aeroport TIMESTAMP NOT NULL,
+   date_heure_retour_aeroport TIMESTAMP NOT NULL,
+   PRIMARY KEY (id_planification),
+   CONSTRAINT fk_reservation FOREIGN KEY (id_reservation) REFERENCES Reservation(id_reservation),
+   CONSTRAINT fk_vehicule FOREIGN KEY (id_vehicule) REFERENCES Vehicule(id)
+);
+
+-- ===========================================
+-- INSERTION DES DONNÉES
+-- ===========================================
+
+-- Insertion de l'aéroport (id = 0)
+INSERT INTO Hotel (id_hotel, nom) VALUES (0, 'Aeroport');
 
 -- Insertion des hôtels
 INSERT INTO Hotel (id_hotel, nom) VALUES 
@@ -53,6 +117,46 @@ INSERT INTO Reservation (nb_passager, date_heure_arrivee, id_client, id_hotel) V
     ( 7, '2026-02-15 13:00:00', '6302', 1),
     ( 1, '2026-02-18 22:55:00', '8640', 4);
 
--- Vérification
+-- Insertion des véhicules
+INSERT INTO Vehicule (reference, place, type_carburant) VALUES
+    ('VH-001', 4, 'E'),
+    ('VH-002', 5, 'D'),
+    ('VH-003', 7, 'D'),
+    ('VH-004', 2, 'E'),
+    ('VH-005', 9, 'D');
+
+-- Insertion des paramètres initiaux
+INSERT INTO Parametre (cle, valeur, unite) VALUES
+    ('vitesse_moyenne_kmh', 30, 'km/h'),
+    ('temps_attente_min', 30, 'min');
+
+-- Insertion des distances (en km)
+-- Convention: from_hotel < to_hotel (distance A→B = B→A)
+-- Aéroport (id=0) vers les hôtels
+INSERT INTO Distance (from_hotel, to_hotel, valeur) VALUES
+    (0, 1, 15.0),   -- Aéroport -> Colbert
+    (0, 2, 10.0),   -- Aéroport -> Novotel
+    (0, 3, 8.0),    -- Aéroport -> Ibis
+    (0, 4, 20.0);   -- Aéroport -> Lokanga
+
+-- Distances entre hôtels
+INSERT INTO Distance (from_hotel, to_hotel, valeur) VALUES
+    (1, 2, 5.0),    -- Colbert -> Novotel
+    (1, 3, 7.0),    -- Colbert -> Ibis
+    (1, 4, 12.0),   -- Colbert -> Lokanga
+    (2, 3, 4.0),    -- Novotel -> Ibis
+    (2, 4, 15.0),   -- Novotel -> Lokanga
+    (3, 4, 18.0);   -- Ibis -> Lokanga
+
+-- ===========================================
+-- VÉRIFICATION
+-- ===========================================
 SELECT * FROM Hotel ORDER BY id_hotel;
 SELECT * FROM Reservation ORDER BY id_reservation;
+SELECT * FROM Vehicule ORDER BY id;
+SELECT * FROM Parametre ORDER BY cle;
+SELECT d.*, h1.nom AS from_hotel_nom, h2.nom AS to_hotel_nom 
+FROM Distance d
+JOIN Hotel h1 ON d.from_hotel = h1.id_hotel
+JOIN Hotel h2 ON d.to_hotel = h2.id_hotel
+ORDER BY from_hotel, to_hotel;
