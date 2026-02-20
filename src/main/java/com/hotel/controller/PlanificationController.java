@@ -34,21 +34,21 @@ public class PlanificationController {
     public ApiResponse<?> getPlanifications(
             @RequestParam(name = "token") String token,
             @RequestParam(name = "date") String dateStr) throws SQLException {
-        
+
         // Vérifier le token
         if (token == null || token.isEmpty()) {
             return ApiResponse.error(403, "Token manquant", null);
         }
-        
+
         if (!tokenService.isTokenValid(token)) {
             return ApiResponse.error(403, "Token invalide ou expiré", null);
         }
-        
+
         try {
             if (dateStr == null || dateStr.isEmpty()) {
                 return ApiResponse.error(400, "Le paramètre 'date' est requis (format: YYYY-MM-DD)", null);
             }
-            
+
             SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd");
             Date date = sdf.parse(dateStr);
             List<Planification> planifications = planificationService.getPlanificationsByDate(date);
@@ -69,23 +69,32 @@ public class PlanificationController {
     public ApiResponse<?> createPlanification(
             @RequestParam(name = "token") String token,
             @RequestParam(name = "id_reservation") int idReservation,
-            @RequestParam(name = "id_vehicule", required = false, defaultValue = "-1") int idVehicule,
-            @RequestParam(name = "date_heure_depart", required = false) String dateHeureDepartStr,
-            @RequestParam(name = "date_heure_retour", required = false) String dateHeureRetourStr) throws SQLException {
-        
+            @RequestParam(name = "id_vehicule") String idVehiculeStr,
+            @RequestParam(name = "date_heure_depart") String dateHeureDepartStr,
+            @RequestParam(name = "date_heure_retour") String dateHeureRetourStr) throws SQLException {
+
         // Vérifier le token
         if (token == null || token.isEmpty()) {
             return ApiResponse.error(403, "Token manquant", null);
         }
-        
+
         if (!tokenService.isTokenValid(token)) {
             return ApiResponse.error(403, "Token invalide ou expiré", null);
         }
-        
+
         try {
             Timestamp dateHeureDepart;
             Timestamp dateHeureRetour;
-            int vehiculeId = idVehicule;
+            int vehiculeId = -1;
+
+            // Parser l'id du véhicule si fourni
+            if (idVehiculeStr != null && !idVehiculeStr.isEmpty()) {
+                try {
+                    vehiculeId = Integer.parseInt(idVehiculeStr);
+                } catch (NumberFormatException e) {
+                    // Ignorer, on garde -1
+                }
+            }
 
             // Si les dates ne sont pas fournies, les calculer automatiquement
             if (dateHeureDepartStr == null || dateHeureDepartStr.isEmpty()) {
@@ -117,8 +126,8 @@ public class PlanificationController {
             }
 
             Planification planification = planificationService.planifier(
-                idReservation, vehiculeId, dateHeureDepart, dateHeureRetour);
-            
+                    idReservation, vehiculeId, dateHeureDepart, dateHeureRetour);
+
             if (planification != null) {
                 return ApiResponse.success(planification);
             } else {
@@ -139,16 +148,16 @@ public class PlanificationController {
     @GetMapping(value = "/reservations/non-assignees")
     public ApiResponse<?> getReservationsNonAssignees(
             @RequestParam(name = "token") String token) throws SQLException {
-        
+
         // Vérifier le token
         if (token == null || token.isEmpty()) {
             return ApiResponse.error(403, "Token manquant", null);
         }
-        
+
         if (!tokenService.isTokenValid(token)) {
             return ApiResponse.error(403, "Token invalide ou expiré", null);
         }
-        
+
         try {
             List<Reservation> reservations = planificationService.getReservationsNonAssignees();
             return ApiResponse.success(reservations);
