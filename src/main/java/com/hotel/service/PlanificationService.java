@@ -242,4 +242,75 @@ public class PlanificationService {
 
         return null;
     }
+
+    /**
+     * Récupère toutes les planifications d'une date donnée
+     * @param date La date pour laquelle récupérer les planifications
+     * @return Liste des planifications avec infos jointes (client, hotel, vehicule)
+     */
+    public List<Planification> getPlanificationsByDate(java.util.Date date) throws SQLException {
+        List<Planification> planifications = new ArrayList<>();
+        
+        String sql = "SELECT p.*, r.id_client, h.nom as nom_hotel, v.reference as reference_vehicule " +
+                     "FROM Planification p " +
+                     "JOIN Reservation r ON p.id_reservation = r.id_reservation " +
+                     "JOIN Hotel h ON r.id_hotel = h.id_hotel " +
+                     "JOIN Vehicule v ON p.id_vehicule = v.id " +
+                     "WHERE DATE(p.date_heure_depart_aeroport) = ? " +
+                     "ORDER BY p.date_heure_depart_aeroport";
+
+        try (Connection conn = DatabaseConnection.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+
+            stmt.setDate(1, new java.sql.Date(date.getTime()));
+
+            try (ResultSet rs = stmt.executeQuery()) {
+                while (rs.next()) {
+                    Planification planification = new Planification();
+                    planification.setIdPlanification(rs.getInt("id_planification"));
+                    planification.setIdReservation(rs.getInt("id_reservation"));
+                    planification.setIdVehicule(rs.getInt("id_vehicule"));
+                    planification.setDateHeureDepartAeroport(rs.getTimestamp("date_heure_depart_aeroport"));
+                    planification.setDateHeureRetourAeroport(rs.getTimestamp("date_heure_retour_aeroport"));
+                    planification.setIdClient(rs.getString("id_client"));
+                    planification.setNomHotel(rs.getString("nom_hotel"));
+                    planification.setReferenceVehicule(rs.getString("reference_vehicule"));
+                    planifications.add(planification);
+                }
+            }
+        }
+
+        return planifications;
+    }
+
+    /**
+     * Récupère les réservations sans planification associée
+     * @return Liste des réservations non assignées
+     */
+    public List<Reservation> getReservationsNonAssignees() throws SQLException {
+        List<Reservation> reservations = new ArrayList<>();
+        
+        String sql = "SELECT r.*, h.nom as nom_hotel FROM Reservation r " +
+                     "LEFT JOIN Hotel h ON r.id_hotel = h.id_hotel " +
+                     "WHERE r.id_reservation NOT IN (SELECT id_reservation FROM Planification) " +
+                     "ORDER BY r.date_heure_arrivee";
+
+        try (Connection conn = DatabaseConnection.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql);
+             ResultSet rs = stmt.executeQuery()) {
+
+            while (rs.next()) {
+                Reservation reservation = new Reservation();
+                reservation.setId_reservation(rs.getInt("id_reservation"));
+                reservation.setId_client(rs.getString("id_client"));
+                reservation.setNb_passager(rs.getInt("nb_passager"));
+                reservation.setDate_heure_arrivee(rs.getTimestamp("date_heure_arrivee"));
+                reservation.setId_hotel(rs.getInt("id_hotel"));
+                reservation.setNom_hotel(rs.getString("nom_hotel"));
+                reservations.add(reservation);
+            }
+        }
+
+        return reservations;
+    }
 }
