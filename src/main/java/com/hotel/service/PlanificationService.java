@@ -146,4 +146,62 @@ public class PlanificationService {
         long retourMillis = reservation.getDate_heure_arrivee().getTime() + dureeMillis;
         return new Timestamp(retourMillis);
     }
+
+    /**
+     * Sélectionne le véhicule le plus approprié pour une réservation selon les règles de gestion:
+     * 1. nb_passager <= place du véhicule
+     * 2. Choisir celui qui laisse le moins de places vides
+     * 3. Si égalité → priorité au Diesel ('D')
+     * 4. Si égalité de capacité ET de type → random
+     * 5. Le véhicule doit être disponible sur le créneau
+     * @param idReservation ID de la réservation
+     * @return Le véhicule approprié ou null si aucun disponible
+     */
+    public Vehicule getVehiculeApproprieForReservation(int idReservation) throws SQLException {
+        Reservation reservation = getReservationById(idReservation);
+        if (reservation == null) {
+            throw new SQLException("Réservation non trouvée: " + idReservation);
+        }
+
+        int nbPassagers = reservation.getNb_passager();
+
+        // Calculer le créneau
+        Timestamp depart = getDateHeureDepartAeroport(idReservation);
+        Timestamp retour = getDateHeureRetourAeroport(idReservation);
+
+        // Récupérer tous les véhicules avec assez de places, triés selon les règles
+        // ORDER BY: 1) places - nb_passager ASC (moins de places vides)
+        //           2) type_carburant = 'D' DESC (Diesel en priorité)
+        //           3) RANDOM() pour départager
+        String sql = "SELECT * FROM Vehicule " +
+                     "WHERE place >= ? " +
+                     "ORDER BY (place - ?) ASC, " +
+                     "CASE WHEN type_carburant = 'D' THEN 0 ELSE 1 END ASC, " +
+                     "RANDOM()";
+
+        try (Connection conn = DatabaseConnection.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+
+            stmt.setInt(1, nbPassagers);
+            stmt.setInt(2, nbPassagers);
+
+            try (ResultSet rs = stmt.executeQuery()) {
+                while (rs.next()) {
+                    Vehicule vehicule = new Vehicule();
+                    vehicule.setId(rs.getInt("id"));
+                    vehicule.setReference(rs.getString("reference"));
+                    vehicule.setPlace(rs.getInt("place"));
+                    vehicule.setTypeCarburant(rs.getString("type_carburant"));
+
+                    // Vérifier la disponibilité sur le créneau
+                    if (estVoitureDisponible(vehicule.getId(), depart, retour)) {
+                        return vehicule;
+                    }
+                }
+            }
+        }
+
+        // Aucun véhicule disponible
+        return null;
+    }
 }
