@@ -204,4 +204,42 @@ public class PlanificationService {
         // Aucun véhicule disponible
         return null;
     }
+
+    /**
+     * Crée une planification en base
+     * @param idReservation ID de la réservation
+     * @param idVehicule ID du véhicule
+     * @param dateHeureDepart Date et heure de départ de l'aéroport
+     * @param dateHeureRetour Date et heure de retour à l'aéroport
+     * @return La planification créée
+     */
+    public Planification planifier(int idReservation, int idVehicule, 
+                                   Timestamp dateHeureDepart, Timestamp dateHeureRetour) throws SQLException {
+        String sql = "INSERT INTO Planification (id_reservation, id_vehicule, " +
+                     "date_heure_depart_aeroport, date_heure_retour_aeroport) " +
+                     "VALUES (?, ?, ?, ?) RETURNING id_planification";
+
+        try (Connection conn = DatabaseConnection.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+
+            stmt.setInt(1, idReservation);
+            stmt.setInt(2, idVehicule);
+            stmt.setTimestamp(3, dateHeureDepart);
+            stmt.setTimestamp(4, dateHeureRetour);
+
+            try (ResultSet rs = stmt.executeQuery()) {
+                if (rs.next()) {
+                    Planification planification = new Planification();
+                    planification.setIdPlanification(rs.getInt("id_planification"));
+                    planification.setIdReservation(idReservation);
+                    planification.setIdVehicule(idVehicule);
+                    planification.setDateHeureDepartAeroport(dateHeureDepart);
+                    planification.setDateHeureRetourAeroport(dateHeureRetour);
+                    return planification;
+                }
+            }
+        }
+
+        return null;
+    }
 }
