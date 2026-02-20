@@ -108,8 +108,8 @@ public class PlanificationService {
     }
 
     /**
-     * Calcule l'heure de départ depuis l'aéroport (avant l'arrivée du vol)
-     * date_heure_depart_aeroport = date_heure_arrivee_vol - duree_trajet
+     * Calcule l'heure de départ depuis l'aéroport pour une réservation donnée
+     * date_heure_depart_aeroport = date_heure_arrivee_vol + temps_attente mais ignoré dans le sprint 3
      * @param idReservation ID de la réservation
      * @return Le timestamp de départ de l'aéroport
      */
@@ -119,17 +119,12 @@ public class PlanificationService {
             throw new SQLException("Réservation non trouvée: " + idReservation);
         }
 
-        double dureeMinutes = getDureeTrajetMinutes(idReservation);
-        long dureeMillis = (long) (dureeMinutes * 60 * 1000);
-
-        // Départ = arrivée vol - durée trajet
-        long departMillis = reservation.getDate_heure_arrivee().getTime() - dureeMillis;
-        return new Timestamp(departMillis);
+        return reservation.getDate_heure_arrivee();
     }
 
     /**
      * Calcule l'heure de retour à l'aéroport (après dépôt au hotel)
-     * date_heure_retour_aeroport = date_heure_arrivee_vol + duree_trajet
+     * date_heure_retour_aeroport = date_heure_depart_aeroport + 2 * duree_trajet
      * @param idReservation ID de la réservation
      * @return Le timestamp de retour à l'aéroport
      */
@@ -143,7 +138,7 @@ public class PlanificationService {
         long dureeMillis = (long) (dureeMinutes * 60 * 1000);
 
         // Retour = arrivée vol + durée trajet
-        long retourMillis = reservation.getDate_heure_arrivee().getTime() + dureeMillis;
+        long retourMillis = getDateHeureDepartAeroport(idReservation).getTime() + 2 * dureeMillis;
         return new Timestamp(retourMillis);
     }
 
