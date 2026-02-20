@@ -115,7 +115,7 @@
         document.getElementById('selectedDate').textContent = date;
         
         // Récupérer le token depuis localStorage ou sessionStorage
-        const token = localStorage.getItem('apiToken') || sessionStorage.getItem('apiToken') || '';
+        const token = localStorage.getItem('api_token') || sessionStorage.getItem('api_token') || '';
         
         async function loadPlanifications() {
             const loadingDiv = document.getElementById('loadingDiv');
@@ -130,48 +130,45 @@
             emptyDiv.style.display = 'none';
             
             try {
-                const response = await fetch('${pageContext.request.contextPath}/planifications?date=' + date + '&token=' + token);
-                const data = await response.json();
-                
+                const data = await fetchApi('${pageContext.request.contextPath}/planifications?date=' + date);
                 loadingDiv.style.display = 'none';
-                
-                if (data.status === 'error') {
-                    errorDiv.textContent = data.message;
+
+                handleApiResponse(data, (planifications) => {
+                    planifications = planifications || [];
+
+                    if (planifications.length === 0) {
+                        emptyDiv.style.display = 'block';
+                        resultCount.textContent = '0 planification(s)';
+                        return;
+                    }
+
+                    resultCount.textContent = planifications.length + ' planification(s)';
+
+                    const tbody = document.getElementById('planificationTableBody');
+                    tbody.innerHTML = '';
+
+                    planifications.forEach(p => {
+                        const depart = new Date(p.dateHeureDepartAeroport).toLocaleString('fr-FR');
+                        const retour = new Date(p.dateHeureRetourAeroport).toLocaleString('fr-FR');
+
+                        const row = document.createElement('tr');
+                        row.innerHTML = '' +
+                            '<td>' + escapeHtml(p.idPlanification) + '</td>' +
+                            '<td>' + escapeHtml(p.idReservation) + '</td>' +
+                            '<td>' + escapeHtml(p.idClient || '-') + '</td>' +
+                            '<td>' + escapeHtml(p.nomHotel || '-') + '</td>' +
+                            '<td>' + escapeHtml(p.referenceVehicule || p.idVehicule) + '</td>' +
+                            '<td>' + escapeHtml(depart) + '</td>' +
+                            '<td>' + escapeHtml(retour) + '</td>';
+                        tbody.appendChild(row);
+                    });
+
+                    tableContainer.style.display = 'block';
+                }, (code, message) => {
+                    errorDiv.textContent = message;
                     errorDiv.style.display = 'block';
-                    return;
-                }
-                
-                const planifications = data.data || [];
-                
-                if (planifications.length === 0) {
-                    emptyDiv.style.display = 'block';
-                    resultCount.textContent = '0 planification(s)';
-                    return;
-                }
-                
-                resultCount.textContent = planifications.length + ' planification(s)';
-                
-                const tbody = document.getElementById('planificationTableBody');
-                tbody.innerHTML = '';
-                
-                planifications.forEach(p => {
-                    const depart = new Date(p.dateHeureDepartAeroport).toLocaleString('fr-FR');
-                    const retour = new Date(p.dateHeureRetourAeroport).toLocaleString('fr-FR');
-                    
-                    const row = document.createElement('tr');
-                    row.innerHTML = `
-                        <td>${p.idPlanification}</td>
-                        <td>${p.idReservation}</td>
-                        <td>${p.idClient || '-'}</td>
-                        <td>${p.nomHotel || '-'}</td>
-                        <td>${p.referenceVehicule || p.idVehicule}</td>
-                        <td>${depart}</td>
-                        <td>${retour}</td>
-                    `;
-                    tbody.appendChild(row);
                 });
-                
-                tableContainer.style.display = 'block';
+
             } catch (error) {
                 loadingDiv.style.display = 'none';
                 errorDiv.textContent = 'Erreur de connexion: ' + error.message;

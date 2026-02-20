@@ -134,18 +134,15 @@
 
                         const row = document.createElement('tr');
                         row.id = 'row-' + r.id_reservation;
-                        row.innerHTML = `
-                            <td>${r.id_reservation}</td>
-                            <td>${r.id_client}</td>
-                            <td>${r.nb_passager}</td>
-                            <td>${dateArrivee}</td>
-                            <td>${r.nom_hotel || '-'}</td>
-                            <td>
-                                <button class="btn btn-primary btn-assign" onclick="assignerReservation(${r.id_reservation})">
-                                    Assigner
-                                </button>
-                            </td>
-                        `;
+                        row.innerHTML = '' +
+                            '<td>' + escapeHtml(r.id_reservation) + '</td>' +
+                            '<td>' + escapeHtml(r.id_client || '-') + '</td>' +
+                            '<td>' + escapeHtml(r.nb_passager) + '</td>' +
+                            '<td>' + escapeHtml(dateArrivee) + '</td>' +
+                            '<td>' + escapeHtml(r.nom_hotel || '-') + '</td>' +
+                            '<td>' +
+                                '<button class="btn btn-primary btn-assign" onclick="assignerReservation(' + r.id_reservation + ')">Assigner</button>' +
+                            '</td>';
                         tbody.appendChild(row);
                     });
 
@@ -176,7 +173,6 @@
             
             try {
                 const formData = new FormData();
-                formData.append('token', token);
                 formData.append('id_reservation', idReservation);
                 
                 const data = await fetchApi('${pageContext.request.contextPath}/planifications', { method: 'POST', body: formData });
