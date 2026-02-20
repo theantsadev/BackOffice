@@ -61,4 +61,25 @@ public class PageController {
         mv.setView("pages/gestion-tokens.jsp");
         return mv;
     }
+    
+    @GetMapping(value = "/pages/formulaire-planification")
+    public ModelView formulairePlanification() {
+        ModelView mv = new ModelView();
+        mv.setView("pages/formulaire-planification.jsp");
+        return mv;
+    }
+    
+    @GetMapping(value = "/pages/liste-planification")
+    public ModelView listePlanification() {
+        ModelView mv = new ModelView();
+        mv.setView("pages/liste-planification.jsp");
+        return mv;
+    }
+    
+    @GetMapping(value = "/pages/liste-reservation-non-assignees")
+    public ModelView listeReservationNonAssignees() {
+        ModelView mv = new ModelView();
+        mv.setView("pages/liste-reservation-non-assignees.jsp");
+        return mv;
+    }
 }
