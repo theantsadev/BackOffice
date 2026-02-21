@@ -166,7 +166,7 @@ main
 
 ---
 
-### sprint-3-feat1 *(Vicky — Scripts DB)*
+### sprint-3-script-bdd *(Vicky — Scripts DB)*
 
 ```bash
 git checkout -b sprint-3-script-bdd
@@ -181,7 +181,7 @@ git commit -m "feat: add reset script to clear all data"
 ### sprint-3-metier-planification *(mike — Métier + API + JSP planification)*
 
 ```bash
-git checkout -b sprint-3-feat2
+git checkout -b sprint-3-metier-planification
 
 # Métier
 git commit -m "feat: add getParametreByCle in Parametre class"
