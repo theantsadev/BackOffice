@@ -18,6 +18,7 @@ import java.sql.Timestamp;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.List;
+import java.util.Map;
 
 @Controller
 public class PlanificationController {
@@ -27,7 +28,9 @@ public class PlanificationController {
 
     /**
      * GET /planifications?date=YYYY-MM-DD
-     * Récupère les planifications d'une date donnée
+     * Planification automatique: récupère les réservations de la date,
+     * assigne automatiquement un véhicule à chaque réservation non assignée,
+     * et retourne les planifications + réservations non assignées
      */
     @Json
     @GetMapping(value = "/planifications")
@@ -51,10 +54,10 @@ public class PlanificationController {
 
             SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd");
             Date date = sdf.parse(dateStr);
-            List<Planification> planifications = planificationService.getPlanificationsByDate(date);
-            return ApiResponse.success(planifications);
+            Map<String, Object> result = planificationService.planifierAutoParDate(date);
+            return ApiResponse.success(result);
         } catch (Exception e) {
-            String errorMessage = "Erreur lors de la récupération des planifications: " + e.getMessage();
+            String errorMessage = "Erreur lors de la planification automatique: " + e.getMessage();
             System.err.println(errorMessage);
             return ApiResponse.error(500, errorMessage, null);
         }
