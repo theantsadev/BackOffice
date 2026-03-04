@@ -49,9 +49,6 @@
             <a href="${pageContext.request.contextPath}/pages/liste-reservations" class="btn btn-outline-primary menu-btn">
                 Voir les Réservations
             </a>
-            <a href="${pageContext.request.contextPath}/pages/liste-reservation-non-assignees" class="btn btn-outline-warning menu-btn">
-                Réservations Non Assignées
-            </a>
             
             <h5 class="text-muted mt-4">🚗 Véhicules</h5>
             <a href="${pageContext.request.contextPath}/pages/formulaire-vehicule" class="btn btn-success menu-btn">

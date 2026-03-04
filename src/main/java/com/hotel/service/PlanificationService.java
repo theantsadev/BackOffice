@@ -7,7 +7,9 @@ import com.hotel.model.Vehicule;
 
 import java.sql.*;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 public class PlanificationService {
 
@@ -307,5 +309,88 @@ public class PlanificationService {
         }
 
         return reservations;
+    }
+
+    /**
+     * Vérifie si une réservation a déjà une planification associée
+     * @param idReservation ID de la réservation
+     * @return true si déjà assignée
+     */
+    public boolean isReservationDejaAssignee(int idReservation) throws SQLException {
+        String sql = "SELECT COUNT(*) FROM Planification WHERE id_reservation = ?";
+
+        try (Connection conn = DatabaseConnection.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+
+            stmt.setInt(1, idReservation);
+
+            try (ResultSet rs = stmt.executeQuery()) {
+                if (rs.next()) {
+                    return rs.getInt(1) > 0;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Planification automatique pour toutes les réservations d'une date donnée.
+     * Pour chaque réservation de la date:
+     * - Si déjà assignée (planification existe) → ignore
+     * - Sinon, cherche un véhicule disponible via l'algorithme
+     *   - Si trouvé → crée la planification
+     *   - Sinon → ajoute aux réservations non assignées
+     * @param date La date des réservations
+     * @return Map avec "planifications" et "reservationsNonAssignees"
+     */
+    public Map<String, Object> planifierAutoParDate(java.util.Date date) throws SQLException {
+        List<Reservation> reservations = reservationService.getReservationByDate(date);
+
+        // Trier: même heure d'arrivée → plus grand nombre de passagers en premier
+        reservations.sort((a, b) -> {
+            int cmpDate = a.getDate_heure_arrivee().compareTo(b.getDate_heure_arrivee());
+            if (cmpDate != 0) return cmpDate;
+            return Integer.compare(b.getNb_passager(), a.getNb_passager()); // DESC
+        });
+
+        List<Reservation> reservationsNonAssignees = new ArrayList<>();
+
+        for (Reservation reservation : reservations) {
+            int idReservation = reservation.getId_reservation();
+
+            // Si déjà assignée, on l'ignore
+            if (isReservationDejaAssignee(idReservation)) {
+                continue;
+            }
+
+            try {
+                // Calculer les heures de départ et retour
+                Timestamp depart = getDateHeureDepartAeroport(idReservation);
+                Timestamp retour = getDateHeureRetourAeroport(idReservation);
+
+                // Chercher un véhicule disponible selon l'algorithme
+                Vehicule vehicule = getVehiculeApproprieForReservation(idReservation);
+
+                if (vehicule != null) {
+                    // Véhicule trouvé → créer la planification
+                    planifier(idReservation, vehicule.getId(), depart, retour);
+                } else {
+                    // Aucun véhicule disponible → non assignée
+                    reservationsNonAssignees.add(reservation);
+                }
+            } catch (Exception e) {
+                System.err.println("Erreur planification auto pour réservation " + idReservation + ": " + e.getMessage());
+                reservationsNonAssignees.add(reservation);
+            }
+        }
+
+        // Récupérer toutes les planifications de la date (anciennes + nouvelles)
+        List<Planification> planifications = getPlanificationsByDate(date);
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("planifications", planifications);
+        result.put("reservationsNonAssignees", reservationsNonAssignees);
+        return result;
     }
 }
