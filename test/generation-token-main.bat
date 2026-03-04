@@ -1,0 +1,1 @@
+mvn "-Dexec.mainClass=com.hotel.Main" compile exec:java
