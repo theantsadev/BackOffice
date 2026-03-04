@@ -1,3 +1,4 @@
 je dois changer le front de getPlanifications et sa  logique metier :
 - la page liste-planification doit etre fusionnée avec la page liste-reservation-non-assignees donc la liste des reservations non assignees vient aussi de formulaire-planification via choix de date de reservation
 - apres input de date dans la form-planfication , on get toutes les reservations rattachées à une date (fonction deja presente dans ReservationService) puis on parcours un par un ces reservations et on assigne de un par un de facon algorithme (si l'algo trouve un vehicule dispo , on assigne sinon ca entre dans les reservations non assignées , si deja assigné alors on ignore )
+- dans les reservations qui ont une meme date et meme heure avec nombre de passagers differents , on priorise tjrs le plus grand nombre de passagers

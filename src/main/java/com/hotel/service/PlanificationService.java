@@ -346,6 +346,14 @@ public class PlanificationService {
      */
     public Map<String, Object> planifierAutoParDate(java.util.Date date) throws SQLException {
         List<Reservation> reservations = reservationService.getReservationByDate(date);
+
+        // Trier: même heure d'arrivée → plus grand nombre de passagers en premier
+        reservations.sort((a, b) -> {
+            int cmpDate = a.getDate_heure_arrivee().compareTo(b.getDate_heure_arrivee());
+            if (cmpDate != 0) return cmpDate;
+            return Integer.compare(b.getNb_passager(), a.getNb_passager()); // DESC
+        });
+
         List<Reservation> reservationsNonAssignees = new ArrayList<>();
 
         for (Reservation reservation : reservations) {
