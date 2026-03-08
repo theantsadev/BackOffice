@@ -65,7 +65,6 @@ CREATE TABLE Parametre (
 );
 
 -- Table Distance
--- Note: La distance A→B = B→A. On n'insère qu'une seule direction (from_hotel < to_hotel par convention)
 CREATE TABLE Distance (
    id_distance SERIAL,
    from_hotel INTEGER NOT NULL,
