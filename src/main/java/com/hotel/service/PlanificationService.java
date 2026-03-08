@@ -1,15 +1,20 @@
 package com.hotel.service;
 
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Timestamp;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+
 import com.hotel.database.DatabaseConnection;
 import com.hotel.model.Planification;
 import com.hotel.model.Reservation;
 import com.hotel.model.Vehicule;
-
-import java.sql.*;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
 
 public class PlanificationService {
 
@@ -241,18 +246,25 @@ public class PlanificationService {
     }
 
     /**
-     * Récupère toutes les planifications d'une date donnée
+     * Récupère toutes les planifications d'une date donnée.
+     * Calcule l'ordre de dépôt par vehicule :
+     *   1. Distance aéroport → hôtel croissante (plus proche d'abord)
+     *   2. À distance égale : ordre alphabétique sur le nom de l'hôtel
      * @param date La date pour laquelle récupérer les planifications
-     * @return Liste des planifications avec infos jointes (client, hotel, vehicule)
+     * @return Liste des planifications avec infos jointes (client, hotel, vehicule, ordre_depot)
      */
     public List<Planification> getPlanificationsByDate(java.util.Date date) throws SQLException {
         List<Planification> planifications = new ArrayList<>();
-        
-        String sql = "SELECT p.*, r.id_client, h.nom as nom_hotel, v.reference as reference_vehicule " +
+
+        // On récupère aussi la distance aéroport (id=0) → hôtel via LEFT JOIN
+        String sql = "SELECT p.*, r.id_client, r.nb_passager, r.id_hotel, " +
+                     "h.nom as nom_hotel, v.reference as reference_vehicule, " +
+                     "COALESCE(d.valeur, -1) as distance_aeroport " +
                      "FROM Planification p " +
                      "JOIN Reservation r ON p.id_reservation = r.id_reservation " +
                      "JOIN Hotel h ON r.id_hotel = h.id_hotel " +
                      "JOIN Vehicule v ON p.id_vehicule = v.id " +
+                     "LEFT JOIN Distance d ON d.from_hotel = 0 AND d.to_hotel = r.id_hotel " +
                      "WHERE DATE(p.date_heure_depart_aeroport) = ? " +
                      "ORDER BY p.date_heure_depart_aeroport";
 
@@ -270,10 +282,40 @@ public class PlanificationService {
                     planification.setDateHeureDepartAeroport(rs.getTimestamp("date_heure_depart_aeroport"));
                     planification.setDateHeureRetourAeroport(rs.getTimestamp("date_heure_retour_aeroport"));
                     planification.setIdClient(rs.getString("id_client"));
+                    planification.setNbPassager(rs.getInt("nb_passager"));
                     planification.setNomHotel(rs.getString("nom_hotel"));
                     planification.setReferenceVehicule(rs.getString("reference_vehicule"));
+                    planification.setDistanceAeroport(rs.getDouble("distance_aeroport"));
                     planifications.add(planification);
                 }
+            }
+        }
+
+        // Calculer l'ordre de dépôt par groupe (même véhicule + même créneau)
+        // Regrouper par (idVehicule, dateDepart, dateRetour)
+        Map<String, List<Planification>> tripGroups = new LinkedHashMap<>();
+        for (Planification p : planifications) {
+            String key = p.getIdVehicule() + "_"
+                    + p.getDateHeureDepartAeroport().getTime() + "_"
+                    + p.getDateHeureRetourAeroport().getTime();
+            tripGroups.computeIfAbsent(key, k -> new ArrayList<>()).add(p);
+        }
+
+        // Pour chaque groupe, trier par distance ASC puis nom hôtel ASC et affecter l'ordre
+        for (List<Planification> trip : tripGroups.values()) {
+            trip.sort((a, b) -> {
+                // Distance négative = inconnue → placer en dernier
+                if (a.getDistanceAeroport() < 0 && b.getDistanceAeroport() >= 0) return 1;
+                if (b.getDistanceAeroport() < 0 && a.getDistanceAeroport() >= 0) return -1;
+                int cmp = Double.compare(a.getDistanceAeroport(), b.getDistanceAeroport());
+                if (cmp != 0) return cmp;
+                // À distance égale : ordre alphabétique sur le nom de l'hôtel
+                String nomA = a.getNomHotel() != null ? a.getNomHotel() : "";
+                String nomB = b.getNomHotel() != null ? b.getNomHotel() : "";
+                return nomA.compareToIgnoreCase(nomB);
+            });
+            for (int i = 0; i < trip.size(); i++) {
+                trip.get(i).setOrdreDepot(i + 1);
             }
         }
 
@@ -335,53 +377,153 @@ public class PlanificationService {
     }
 
     /**
+     * Trouve le véhicule le plus approprié disponible pour un créneau donné,
+     * en excluant les véhicules déjà pris pour un covoiturage en cours.
+     * @param nbPassagers Nombre minimum de places requises
+     * @param depart Timestamp de départ aéroport
+     * @param retour Timestamp de retour aéroport
+     * @param excludeIds IDs des véhicules déjà utilisés dans le même groupe de covoiturage
+     * @return Le véhicule le plus approprié ou null si aucun disponible
+     */
+    private Vehicule trouverVehiculeDisponible(int nbPassagers, Timestamp depart, Timestamp retour,
+                                               List<Integer> excludeIds) throws SQLException {
+        StringBuilder sql = new StringBuilder(
+            "SELECT * FROM Vehicule WHERE place >= ?");
+        if (!excludeIds.isEmpty()) {
+            sql.append(" AND id NOT IN (");
+            for (int i = 0; i < excludeIds.size(); i++) {
+                sql.append(i == 0 ? "?" : ",?");
+            }
+            sql.append(")");
+        }
+        sql.append(" ORDER BY (place - ?) ASC, ")
+           .append("CASE WHEN type_carburant = 'D' THEN 0 ELSE 1 END ASC, ")
+           .append("RANDOM()");
+
+        try (Connection conn = DatabaseConnection.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql.toString())) {
+            int idx = 1;
+            stmt.setInt(idx++, nbPassagers);
+            for (int id : excludeIds) {
+                stmt.setInt(idx++, id);
+            }
+            stmt.setInt(idx, nbPassagers);
+
+            try (ResultSet rs = stmt.executeQuery()) {
+                while (rs.next()) {
+                    Vehicule vehicule = new Vehicule();
+                    vehicule.setId(rs.getInt("id"));
+                    vehicule.setReference(rs.getString("reference"));
+                    vehicule.setPlace(rs.getInt("place"));
+                    vehicule.setTypeCarburant(rs.getString("type_carburant"));
+
+                    if (estVoitureDisponible(vehicule.getId(), depart, retour)) {
+                        return vehicule;
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
      * Planification automatique pour toutes les réservations d'une date donnée.
-     * Pour chaque réservation de la date:
-     * - Si déjà assignée (planification existe) → ignore
-     * - Sinon, cherche un véhicule disponible via l'algorithme
-     *   - Si trouvé → crée la planification
-     *   - Sinon → ajoute aux réservations non assignées
+     * Les réservations arrivant à la même heure et à destination du même hôtel
+     * sont regroupées dans un même véhicule (covoiturage) selon l'algorithme
+     * First-Fit Decreasing (FFD): les plus grands groupes placés en premier,
+     * puis les autres remplissent les places libres des véhicules déjà ouverts.
+     *
+     * Exemple: voiture_A(10 places), voiture_B(6 places), voiture_C(4 places),
+     *          client_1(7 pax) + client_2(3 pax) arrivant au même moment → voiture_A.
+     *
      * @param date La date des réservations
      * @return Map avec "planifications" et "reservationsNonAssignees"
      */
     public Map<String, Object> planifierAutoParDate(java.util.Date date) throws SQLException {
         List<Reservation> reservations = reservationService.getReservationByDate(date);
 
-        // Trier: même heure d'arrivée → plus grand nombre de passagers en premier
-        reservations.sort((a, b) -> {
-            int cmpDate = a.getDate_heure_arrivee().compareTo(b.getDate_heure_arrivee());
-            if (cmpDate != 0) return cmpDate;
-            return Integer.compare(b.getNb_passager(), a.getNb_passager()); // DESC
+        // Filtrer les réservations déjà assignées
+        List<Reservation> aTraiter = new ArrayList<>();
+        for (Reservation r : reservations) {
+            if (!isReservationDejaAssignee(r.getId_reservation())) {
+                aTraiter.add(r);
+            }
+        }
+
+        // Trier par (heure arrivée, id_hotel) pour construire des groupes cohérents
+        aTraiter.sort((a, b) -> {
+            int cmp = a.getDate_heure_arrivee().compareTo(b.getDate_heure_arrivee());
+            if (cmp != 0) return cmp;
+            return Integer.compare(a.getId_hotel(), b.getId_hotel());
         });
+
+        // Regrouper par (date_heure_arrivee, id_hotel) : même heure + même destination
+        // → peuvent partager un véhicule (covoiturage)
+        LinkedHashMap<String, List<Reservation>> groupes = new LinkedHashMap<>();
+        for (Reservation r : aTraiter) {
+            String key = r.getDate_heure_arrivee().getTime() + "_" + r.getId_hotel();
+            groupes.computeIfAbsent(key, k -> new ArrayList<>()).add(r);
+        }
 
         List<Reservation> reservationsNonAssignees = new ArrayList<>();
 
-        for (Reservation reservation : reservations) {
-            int idReservation = reservation.getId_reservation();
+        for (List<Reservation> groupe : groupes.values()) {
+            // First-Fit Decreasing : trier par nb_passager décroissant
+            groupe.sort((a, b) -> Integer.compare(b.getNb_passager(), a.getNb_passager()));
 
-            // Si déjà assignée, on l'ignore
-            if (isReservationDejaAssignee(idReservation)) {
+            // Calculer depart/retour à partir de la première réservation
+            // (identiques pour tout le groupe car même hôtel et même heure d'arrivée)
+            int refId = groupe.get(0).getId_reservation();
+            Timestamp depart;
+            Timestamp retour;
+            try {
+                depart = getDateHeureDepartAeroport(refId);
+                retour = getDateHeureRetourAeroport(refId);
+            } catch (Exception e) {
+                System.err.println("Erreur calcul créneau pour réservation " + refId + ": " + e.getMessage());
+                reservationsNonAssignees.addAll(groupe);
                 continue;
             }
 
-            try {
-                // Calculer les heures de départ et retour
-                Timestamp depart = getDateHeureDepartAeroport(idReservation);
-                Timestamp retour = getDateHeureRetourAeroport(idReservation);
+            // Bins de covoiturage : [idVehicule, placesRestantes]
+            List<int[]> bins = new ArrayList<>();
+            List<Integer> vehiculesUtilises = new ArrayList<>();
 
-                // Chercher un véhicule disponible selon l'algorithme
-                Vehicule vehicule = getVehiculeApproprieForReservation(idReservation);
+            for (Reservation r : groupe) {
+                int nbPax = r.getNb_passager();
 
-                if (vehicule != null) {
-                    // Véhicule trouvé → créer la planification
-                    planifier(idReservation, vehicule.getId(), depart, retour);
-                } else {
-                    // Aucun véhicule disponible → non assignée
-                    reservationsNonAssignees.add(reservation);
+                // Chercher le meilleur bin existant (best-fit : plus petit espace restant qui suffit)
+                int bestBinIdx = -1;
+                int bestRemaining = Integer.MAX_VALUE;
+                for (int i = 0; i < bins.size(); i++) {
+                    int remaining = bins.get(i)[1];
+                    if (remaining >= nbPax && remaining < bestRemaining) {
+                        bestBinIdx = i;
+                        bestRemaining = remaining;
+                    }
                 }
-            } catch (Exception e) {
-                System.err.println("Erreur planification auto pour réservation " + idReservation + ": " + e.getMessage());
-                reservationsNonAssignees.add(reservation);
+
+                if (bestBinIdx >= 0) {
+                    // Covoiturage : place disponible dans un véhicule déjà ouvert
+                    bins.get(bestBinIdx)[1] -= nbPax;
+                    planifier(r.getId_reservation(), bins.get(bestBinIdx)[0], depart, retour);
+                } else {
+                    // Ouvrir un nouveau véhicule (excluant ceux déjà utilisés dans ce groupe)
+                    try {
+                        Vehicule vehicule = trouverVehiculeDisponible(nbPax, depart, retour, vehiculesUtilises);
+                        if (vehicule != null) {
+                            vehiculesUtilises.add(vehicule.getId());
+                            bins.add(new int[]{vehicule.getId(), vehicule.getPlace() - nbPax});
+                            planifier(r.getId_reservation(), vehicule.getId(), depart, retour);
+                        } else {
+                            reservationsNonAssignees.add(r);
+                        }
+                    } catch (Exception e) {
+                        System.err.println("Erreur planification auto pour réservation "
+                            + r.getId_reservation() + ": " + e.getMessage());
+                        reservationsNonAssignees.add(r);
+                    }
+                }
             }
         }
 
