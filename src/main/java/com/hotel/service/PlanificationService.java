@@ -6,6 +6,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -547,6 +548,39 @@ public class PlanificationService {
     }
 
     /**
+     * Retourne tous les véhicules libres (aucun chevauchement de créneau) avec
+     * capacity >= nbPax, en excluant les IDs donnés, triés par place ASC.
+     */
+    private List<Vehicule> getAllVehiculesLibres(int nbPax, Timestamp depart, Timestamp retour,
+            List<Integer> excludeIds) throws SQLException {
+        List<Vehicule> result = new ArrayList<>();
+        StringBuilder sql = new StringBuilder("SELECT * FROM Vehicule WHERE place >= ?");
+        if (!excludeIds.isEmpty()) {
+            sql.append(" AND id NOT IN (");
+            for (int i = 0; i < excludeIds.size(); i++) sql.append(i == 0 ? "?" : ",?");
+            sql.append(")");
+        }
+        sql.append(" ORDER BY place ASC, CASE WHEN type_carburant = 'D' THEN 0 ELSE 1 END ASC");
+        try (Connection conn = DatabaseConnection.getConnection();
+                PreparedStatement stmt = conn.prepareStatement(sql.toString())) {
+            int idx = 1;
+            stmt.setInt(idx++, nbPax);
+            for (int id : excludeIds) stmt.setInt(idx++, id);
+            try (ResultSet rs = stmt.executeQuery()) {
+                while (rs.next()) {
+                    Vehicule v = new Vehicule();
+                    v.setId(rs.getInt("id"));
+                    v.setReference(rs.getString("reference"));
+                    v.setPlace(rs.getInt("place"));
+                    v.setTypeCarburant(rs.getString("type_carburant"));
+                    if (estVoitureDisponible(v.getId(), depart, retour)) result.add(v);
+                }
+            }
+        }
+        return result;
+    }
+
+    /**
      * Planification automatique pour toutes les réservations d'une date donnée.
      * Les réservations arrivant à la même heure et à destination du même hôtel
      * sont regroupées dans un même véhicule (covoiturage) selon l'algorithme
@@ -572,18 +606,29 @@ public class PlanificationService {
             }
         }
 
-        // Trier par (heure arrivée, id_hotel) pour construire des groupes cohérents
-        aTraiter.sort((a, b) -> {
-            int cmp = a.getDate_heure_arrivee().compareTo(b.getDate_heure_arrivee());
-            return cmp;
-        });
+        // Trier par heure d'arrivée croissante
+        aTraiter.sort((a, b) -> a.getDate_heure_arrivee().compareTo(b.getDate_heure_arrivee()));
 
-        // Regrouper par (date_heure_arrivee) : même date_heure
-        // → peuvent partager un véhicule (covoiturage)
-        LinkedHashMap<String, List<Reservation>> groupes = new LinkedHashMap<>();
-        for (Reservation r : aTraiter) {
-            String key = String.valueOf(r.getDate_heure_arrivee().getTime());
-            groupes.computeIfAbsent(key, k -> new ArrayList<>()).add(r);
+        // Récupérer le temps d'attente depuis Parametre (en millisecondes)
+        long tempsAttenteMs = (long) (parametreService.getValeurByCle("temps_attente_min", 30.0) * 60 * 1000);
+
+        // Regrouper par fenêtre glissante de temps_attente_min minutes :
+        // La fenêtre démarre à l'heure d'arrivée de la 1ère réservation non traitée
+        // et inclut toutes les réservations dans [windowStart, windowStart + tempsAttente].
+        // L'heure de départ du groupe = la dernière heure d'arrivée dans la fenêtre.
+        LinkedHashMap<Long, List<Reservation>> groupes = new LinkedHashMap<>();
+        int wIdx = 0;
+        while (wIdx < aTraiter.size()) {
+            long windowStart = aTraiter.get(wIdx).getDate_heure_arrivee().getTime();
+            long windowEnd = windowStart + tempsAttenteMs;
+            List<Reservation> fenetre = new ArrayList<>();
+            while (wIdx < aTraiter.size() && aTraiter.get(wIdx).getDate_heure_arrivee().getTime() <= windowEnd) {
+                fenetre.add(aTraiter.get(wIdx));
+                wIdx++;
+            }
+            // Clé = heure de départ du groupe (= dernière arrivée dans la fenêtre)
+            long departMs = fenetre.get(fenetre.size() - 1).getDate_heure_arrivee().getTime();
+            groupes.put(departMs, fenetre);
         }
 
         List<Reservation> reservationsNonAssignees = new ArrayList<>();
@@ -592,15 +637,20 @@ public class PlanificationService {
             // First-Fit Decreasing : trier par nb_passager décroissant
             groupe.sort((a, b) -> Integer.compare(b.getNb_passager(), a.getNb_passager()));
 
-            // Calculer depart/retour à partir de la première réservation
-            // (identiques pour tout le groupe car même hôtel et même heure d'arrivée)
+            // L'heure de départ = la dernière heure d'arrivée dans la fenêtre (temps_attente_min)
             int refId = groupe.get(0).getId_reservation();
             Timestamp depart;
             Timestamp retour;
             long l = 0;
             int id_hotel = hotel.getId_hotel(); // réinitialisé à l'aéroport pour chaque groupe
             try {
-                depart = getDateHeureDepartAeroport(refId);
+                // Calcul du départ : max des date_heure_arrivee du groupe
+                depart = groupe.get(0).getDate_heure_arrivee();
+                for (Reservation gr : groupe) {
+                    if (gr.getDate_heure_arrivee().after(depart)) {
+                        depart = gr.getDate_heure_arrivee();
+                    }
+                }
                 groupe.sort((a, b) -> {
                     try {
                         return Double.compare(distanceService.getDistanceAeroportHotel(a.getId_hotel()),
@@ -667,7 +717,8 @@ public class PlanificationService {
                 System.err.println("Erreur chargement bins existants: " + e.getMessage());
             }
 
-            for (Reservation r : groupe) {
+            for (int groupeIdx = 0; groupeIdx < groupe.size(); groupeIdx++) {
+                Reservation r = groupe.get(groupeIdx);
                 int nbPax = r.getNb_passager();
 
                 // Chercher le meilleur bin existant (best-fit : plus petit espace restant qui
@@ -690,9 +741,31 @@ public class PlanificationService {
                     // Recalculer le retour pour tout le covoiturage (route change)
                     recalculerRetourVehicule(covVehiculeId, depart, hotel, vitesseKmh);
                 } else {
-                    // Ouvrir un nouveau véhicule (excluant ceux déjà utilisés dans ce groupe)
+                    // Ouvrir un nouveau véhicule avec look-ahead :
+                    // choisir le véhicule qui minimise le gaspillage après remplissage
+                    // greedy avec les réservations restantes du groupe (triées ASC).
                     try {
-                        Vehicule vehicule = trouverVehiculeDisponible(nbPax, depart, retour, vehiculesUtilises);
+                        List<Reservation> restantes = groupe.subList(groupeIdx + 1, groupe.size());
+                        List<Vehicule> candidats = getAllVehiculesLibres(nbPax, depart, retour, vehiculesUtilises);
+                        Vehicule vehicule = null;
+                        int meilleurGaspillage = Integer.MAX_VALUE;
+                        for (Vehicule candidat : candidats) {
+                            int cap = candidat.getPlace() - nbPax;
+                            // Greedy fill : trier restantes ASC et remplir autant que possible
+                            List<Integer> paxRestants = new ArrayList<>();
+                            for (Reservation rest : restantes) paxRestants.add(rest.getNb_passager());
+                            Collections.sort(paxRestants);
+                            int gaspillage = cap;
+                            for (int pax : paxRestants) {
+                                if (pax <= gaspillage) gaspillage -= pax;
+                            }
+                            if (gaspillage < meilleurGaspillage
+                                    || (gaspillage == meilleurGaspillage && vehicule != null
+                                            && candidat.getPlace() < vehicule.getPlace())) {
+                                meilleurGaspillage = gaspillage;
+                                vehicule = candidat;
+                            }
+                        }
                         if (vehicule != null) {
                             vehiculesUtilises.add(vehicule.getId());
                             bins.add(new int[] { vehicule.getId(), vehicule.getPlace() - nbPax });
