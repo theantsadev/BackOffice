@@ -39,10 +39,10 @@ echo.
 
 REM Deploiement automatique vers Tomcat
 SET VICKY=D:\apache-tomcat-10.1.24
-SET JORDI=
+SET JORDI=E:\Etude\Etude\Outils\TOMCAT\apache-tomcat-10.1.28
 SET DOM=C:\Program Files\Apache Software Foundation\Tomcat 10.1
 
-set TOMCAT_HOME=%DOM%
+set TOMCAT_HOME=%JORDI%
 set WEBAPPS_DIR=%TOMCAT_HOME%\webapps
 
 echo 3. Deploiement vers Tomcat...
