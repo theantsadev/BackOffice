@@ -42,7 +42,7 @@ SET VICKY=D:\apache-tomcat-10.1.24
 SET JORDI=E:\Etude\Etude\Outils\TOMCAT\apache-tomcat-10.1.28
 SET DOM=C:\Program Files\Apache Software Foundation\Tomcat 10.1
 
-set TOMCAT_HOME=%JORDI%
+set TOMCAT_HOME=%DOM%
 set WEBAPPS_DIR=%TOMCAT_HOME%\webapps
 
 echo 3. Deploiement vers Tomcat...
@@ -82,15 +82,5 @@ echo.
 echo Pour demarrer l'application:
 echo   1. Demarrez Tomcat: %TOMCAT_HOME%\bin\startup.bat
 echo   2. Accedez a http://localhost:8080/backoffice/pages/
-echo.
-echo Voulez-vous demarrer Tomcat maintenant? (O/N)
-set /p START_TOMCAT=
-if /i "%START_TOMCAT%"=="O" (
-    echo Demarrage de Tomcat...
-    start "" "%TOMCAT_HOME%\bin\startup.bat"
-    timeout /t 3 >nul
-    echo Tomcat demarre! Attendez quelques secondes pour le deploiement...
-    echo Puis ouvrez: http://localhost:8080/backoffice/pages/
-)
 echo.
 pause
