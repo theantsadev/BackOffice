@@ -126,8 +126,7 @@ public class PlanificationService {
 
     /**
      * Calcule l'heure de départ depuis l'aéroport pour une réservation donnée
-     * date_heure_depart_aeroport = date_heure_arrivee_vol + temps_attente mais
-     * ignoré dans le sprint 3
+     * date_heure_depart_aeroport = date_heure_arrivee_vol + temps_attente
      * 
      * @param idReservation ID de la réservation
      * @return Le timestamp de départ de l'aéroport
@@ -138,7 +137,9 @@ public class PlanificationService {
             throw new SQLException("Réservation non trouvée: " + idReservation);
         }
 
-        return reservation.getDate_heure_arrivee();
+        double tempsAttenteMin = parametreService.getValeurByCle("temps_attente_min", 30.0);
+        long attenteMillis = (long) (tempsAttenteMin * 60 * 1000);
+        return new Timestamp(reservation.getDate_heure_arrivee().getTime() + attenteMillis);
     }
 
     /**
@@ -596,6 +597,8 @@ public class PlanificationService {
     public Map<String, Object> planifierAutoParDate(java.util.Date date) throws SQLException {
         List<Reservation> reservations = reservationService.getReservationByDate(date);
         double vitesseKmh = parametreService.getValeurByCle("vitesse_moyenne_kmh", 30.0);
+        double tempsAttenteMin = parametreService.getValeurByCle("temps_attente_min", 30.0);
+        long attenteMillis = (long) (tempsAttenteMin * 60 * 1000);
         Hotel hotel = hotelService.getAeroport();
 
         // Filtrer les réservations déjà assignées
@@ -606,51 +609,56 @@ public class PlanificationService {
             }
         }
 
-        // Trier par heure d'arrivée croissante
-        aTraiter.sort((a, b) -> a.getDate_heure_arrivee().compareTo(b.getDate_heure_arrivee()));
+        // Trier par heure d'arrivée pour construire les fenêtres temporelles
+        aTraiter.sort((a, b) -> {
+            int cmp = a.getDate_heure_arrivee().compareTo(b.getDate_heure_arrivee());
+            return cmp;
+        });
 
-        // Récupérer le temps d'attente depuis Parametre (en millisecondes)
-        long tempsAttenteMs = (long) (parametreService.getValeurByCle("temps_attente_min", 30.0) * 60 * 1000);
-
-        // Regrouper par fenêtre glissante de temps_attente_min minutes :
-        // La fenêtre démarre à l'heure d'arrivée de la 1ère réservation non traitée
-        // et inclut toutes les réservations dans [windowStart, windowStart + tempsAttente].
-        // L'heure de départ du groupe = la dernière heure d'arrivée dans la fenêtre.
+        // Regrouper par fenêtre d'attente:
+        // le groupe démarre à la première arrivée t0, et inclut toutes les réservations
+        // dont l'arrivée est <= t0 + temps_attente_min.
+        // Le DÉPART du groupe = DERNIÈRE arrivée du groupe (sans ajouter l'attente).
         LinkedHashMap<Long, List<Reservation>> groupes = new LinkedHashMap<>();
-        int wIdx = 0;
-        while (wIdx < aTraiter.size()) {
-            long windowStart = aTraiter.get(wIdx).getDate_heure_arrivee().getTime();
-            long windowEnd = windowStart + tempsAttenteMs;
-            List<Reservation> fenetre = new ArrayList<>();
-            while (wIdx < aTraiter.size() && aTraiter.get(wIdx).getDate_heure_arrivee().getTime() <= windowEnd) {
-                fenetre.add(aTraiter.get(wIdx));
-                wIdx++;
+        int idx = 0;
+        while (idx < aTraiter.size()) {
+            Reservation first = aTraiter.get(idx);
+            long groupStart = first.getDate_heure_arrivee().getTime();
+            long groupLimitArrival = groupStart + attenteMillis;
+
+            List<Reservation> groupe = new ArrayList<>();
+            groupe.add(first);
+            idx++;
+
+            while (idx < aTraiter.size()) {
+                Reservation next = aTraiter.get(idx);
+                if (next.getDate_heure_arrivee().getTime() <= groupLimitArrival) {
+                    groupe.add(next);
+                    idx++;
+                } else {
+                    break;
+                }
             }
-            // Clé = heure de départ du groupe (= dernière arrivée dans la fenêtre)
-            long departMs = fenetre.get(fenetre.size() - 1).getDate_heure_arrivee().getTime();
-            groupes.put(departMs, fenetre);
+
+            // Le départ = la DERNIÈRE arrivée du groupe (sans ajouter le temps d'attente)
+            long lastArrivalTime = groupe.get(groupe.size() - 1).getDate_heure_arrivee().getTime();
+            long groupDepart = lastArrivalTime;
+            groupes.put(groupDepart, groupe);
         }
 
         List<Reservation> reservationsNonAssignees = new ArrayList<>();
 
-        for (List<Reservation> groupe : groupes.values()) {
+        for (Map.Entry<Long, List<Reservation>> entry : groupes.entrySet()) {
+            Timestamp depart = new Timestamp(entry.getKey());
+            List<Reservation> groupe = entry.getValue();
             // First-Fit Decreasing : trier par nb_passager décroissant
             groupe.sort((a, b) -> Integer.compare(b.getNb_passager(), a.getNb_passager()));
 
-            // L'heure de départ = la dernière heure d'arrivée dans la fenêtre (temps_attente_min)
-            int refId = groupe.get(0).getId_reservation();
-            Timestamp depart;
+            // Calculer le retour du véhicule pour l'ensemble du groupe au même départ
             Timestamp retour;
             long l = 0;
             int id_hotel = hotel.getId_hotel(); // réinitialisé à l'aéroport pour chaque groupe
             try {
-                // Calcul du départ : max des date_heure_arrivee du groupe
-                depart = groupe.get(0).getDate_heure_arrivee();
-                for (Reservation gr : groupe) {
-                    if (gr.getDate_heure_arrivee().after(depart)) {
-                        depart = gr.getDate_heure_arrivee();
-                    }
-                }
                 groupe.sort((a, b) -> {
                     try {
                         return Double.compare(distanceService.getDistanceAeroportHotel(a.getId_hotel()),
@@ -681,6 +689,7 @@ public class PlanificationService {
 
                 retour = new Timestamp(depart.getTime() + l);
             } catch (Exception e) {
+                int refId = groupe.get(0).getId_reservation();
                 System.err.println("Erreur calcul créneau pour réservation " + refId + ": " + e.getMessage());
                 reservationsNonAssignees.addAll(groupe);
                 continue;
