@@ -589,8 +589,11 @@ public class PlanificationService {
         List<Reservation> reservationsNonAssignees = new ArrayList<>();
 
         for (List<Reservation> groupe : groupes.values()) {
+
             // First-Fit Decreasing : trier par nb_passager décroissant
             groupe.sort((a, b) -> Integer.compare(b.getNb_passager(), a.getNb_passager()));
+            // Copie triée par distance pour le calcul du temps de trajet
+            List<Reservation> groupeParDistance = new ArrayList<>(groupe);
 
             // Calculer depart/retour à partir de la première réservation
             // (identiques pour tout le groupe car même hôtel et même heure d'arrivée)
@@ -601,7 +604,7 @@ public class PlanificationService {
             int id_hotel = hotel.getId_hotel(); // réinitialisé à l'aéroport pour chaque groupe
             try {
                 depart = getDateHeureDepartAeroport(refId);
-                groupe.sort((a, b) -> {
+                groupeParDistance.sort((a, b) -> {
                     try {
                         return Double.compare(distanceService.getDistanceAeroportHotel(a.getId_hotel()),
                                 distanceService.getDistanceAeroportHotel(b.getId_hotel()));
@@ -611,7 +614,7 @@ public class PlanificationService {
                     return 0;
                 });
 
-                for (Reservation reservation : groupe) {
+                for (Reservation reservation : groupeParDistance) {
 
                     Double distanceKm = distanceService.getDistanceValeur(id_hotel,
                             reservation.getId_hotel());
@@ -635,7 +638,6 @@ public class PlanificationService {
                 reservationsNonAssignees.addAll(groupe);
                 continue;
             }
-            groupe.sort((a, b) -> Integer.compare(b.getNb_passager(), a.getNb_passager()));
 
             // Bins de covoiturage : [idVehicule, placesRestantes]
             // Initialisé avec les véhicules déjà planifiés en DB sur ce créneau exact
