@@ -10,13 +10,17 @@ com\hotel\controller\PlanificationController.class
 com\hotel\service\VehiculeService.class
 com\hotel\service\ReservationService.class
 com\hotel\controller\HotelController.class
+com\hotel\service\PlanificationService$AutoPlanContext.class
 com\hotel\controller\TokenController.class
+com\hotel\service\PlanificationService$VehiculeBin.class
 com\hotel\database\DatabaseConnection.class
 com\hotel\model\Distance.class
 com\hotel\model\Parametre.class
+com\hotel\service\PlanificationService$AssignOrderItem.class
 com\hotel\service\ParametreService.class
 com\hotel\controller\ReservationController.class
 com\hotel\model\Token.class
+com\hotel\service\PlanificationService$RouteMetrics.class
 com\hotel\service\TokenService.class
 com\hotel\controller\PageController.class
 com\hotel\model\Reservation.class
