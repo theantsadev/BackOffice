@@ -665,11 +665,7 @@
                             if (match.indexOf(q) < 0) return;
                         }
 
-                        const uniqueByReservation = {};
-                        t.stops.forEach(function(s) {
-                            uniqueByReservation[String(s.idReservation)] = s;
-                        });
-                        const reservationsListe = Object.values(uniqueByReservation).sort(function(a, b) {
+                        const reservationsListe = t.stops.slice().sort(function(a, b) {
                             return Number(a.ordreDepot || 0) - Number(b.ordreDepot || 0);
                         });
                         const reservationHtml = '<ul class="trajet-list">' + reservationsListe.map(function(s) {
