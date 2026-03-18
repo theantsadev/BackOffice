@@ -419,10 +419,12 @@ public class PlanificationService {
     private static class VehiculeBin {
         private final int idVehicule;
         private int placesRestantes;
+        private final String typeCarburant;
 
-        VehiculeBin(int idVehicule, int placesRestantes) {
+        VehiculeBin(int idVehicule, int placesRestantes, String typeCarburant) {
             this.idVehicule = idVehicule;
             this.placesRestantes = placesRestantes;
+            this.typeCarburant = typeCarburant;
         }
     }
 
@@ -852,22 +854,44 @@ public class PlanificationService {
         for (int i = 0; i < groupe.size(); i++) {
             Reservation reservation = groupe.get(i);
             int bestBinIdx = trouverMeilleurBin(bins, reservation.getNb_passager());
+            Vehicule meilleurNouveauVehicule = choisirVehiculeAvecLookAhead(
+                    reservation.getNb_passager(),
+                    depart,
+                    retourInitial,
+                    vehiculesUtilises,
+                    groupe.subList(i + 1, groupe.size()));
 
             try {
-                if (bestBinIdx >= 0) {
+                boolean peutAssignerBin = bestBinIdx >= 0;
+                boolean peutOuvrirNouveau = meilleurNouveauVehicule != null;
+
+                if (!peutAssignerBin && !peutOuvrirNouveau) {
+                    reservationsNonAssignees.add(reservation);
+                    continue;
+                }
+
+                if (peutAssignerBin && !peutOuvrirNouveau) {
                     assignerSurBinExistant(reservation, depart, retourInitial, bins.get(bestBinIdx), context);
+                    continue;
+                }
+
+                if (!peutAssignerBin) {
+                    assignerSurNouveauVehicule(reservation, depart, retourInitial, context, vehiculesUtilises, bins,
+                            meilleurNouveauVehicule);
+                    continue;
+                }
+
+                VehiculeBin binCandidat = bins.get(bestBinIdx);
+                boolean prendreNouveau = doitPrendreNouveauVehicule(
+                        binCandidat,
+                        meilleurNouveauVehicule,
+                        reservation.getNb_passager());
+
+                if (prendreNouveau) {
+                    assignerSurNouveauVehicule(reservation, depart, retourInitial, context, vehiculesUtilises, bins,
+                            meilleurNouveauVehicule);
                 } else {
-                    boolean assignee = ouvrirNouveauVehiculeEtAssigner(
-                            reservation,
-                            depart,
-                            retourInitial,
-                            context,
-                            vehiculesUtilises,
-                            bins,
-                            groupe.subList(i + 1, groupe.size()));
-                    if (!assignee) {
-                        reservationsNonAssignees.add(reservation);
-                    }
+                    assignerSurBinExistant(reservation, depart, retourInitial, binCandidat, context);
                 }
             } catch (Exception e) {
                 System.err.println("Erreur planification auto pour réservation "
@@ -879,12 +903,12 @@ public class PlanificationService {
 
     private List<VehiculeBin> chargerBinsExistants(Timestamp depart, List<Integer> vehiculesUtilises) {
         List<VehiculeBin> bins = new ArrayList<>();
-        String sql = "SELECT p.id_vehicule, v.place, COALESCE(SUM(r.nb_passager),0) as places_prises " +
+        String sql = "SELECT p.id_vehicule, v.place, v.type_carburant, COALESCE(SUM(r.nb_passager),0) as places_prises " +
                 "FROM Planification p " +
                 "JOIN Vehicule v ON v.id = p.id_vehicule " +
                 "JOIN Reservation r ON r.id_reservation = p.id_reservation " +
                 "WHERE p.date_heure_depart_aeroport = ? " +
-                "GROUP BY p.id_vehicule, v.place";
+            "GROUP BY p.id_vehicule, v.place, v.type_carburant";
 
         try (Connection conn = DatabaseConnection.getConnection();
                 PreparedStatement stmt = conn.prepareStatement(sql)) {
@@ -893,7 +917,8 @@ public class PlanificationService {
                 while (rs.next()) {
                     int idVehicule = rs.getInt("id_vehicule");
                     int placesLibres = rs.getInt("place") - rs.getInt("places_prises");
-                    bins.add(new VehiculeBin(idVehicule, placesLibres));
+                    String typeCarburant = rs.getString("type_carburant");
+                    bins.add(new VehiculeBin(idVehicule, placesLibres, typeCarburant));
                     vehiculesUtilises.add(idVehicule);
                 }
             }
@@ -927,25 +952,51 @@ public class PlanificationService {
         recalculerRetourVehicule(bin.idVehicule, depart, context);
     }
 
-    private boolean ouvrirNouveauVehiculeEtAssigner(Reservation reservation,
+    private void assignerSurNouveauVehicule(Reservation reservation,
             Timestamp depart,
             Timestamp retourInitial,
             AutoPlanContext context,
             List<Integer> vehiculesUtilises,
             List<VehiculeBin> bins,
-            List<Reservation> restantes) throws SQLException {
-        Vehicule vehicule = choisirVehiculeAvecLookAhead(
-                reservation.getNb_passager(), depart, retourInitial, vehiculesUtilises, restantes);
+            Vehicule vehicule) throws SQLException {
+        vehiculesUtilises.add(vehicule.getId());
+        bins.add(new VehiculeBin(
+                vehicule.getId(),
+                vehicule.getPlace() - reservation.getNb_passager(),
+                vehicule.getTypeCarburant()));
+        planifier(reservation.getId_reservation(), vehicule.getId(), depart, retourInitial);
+        recalculerRetourVehicule(vehicule.getId(), depart, context);
+    }
 
-        if (vehicule == null) {
+    private boolean doitPrendreNouveauVehicule(VehiculeBin binCandidat,
+            Vehicule nouveauVehicule,
+            int nbPassagers) throws SQLException {
+        int resteBinApresAssignation = binCandidat.placesRestantes - nbPassagers;
+        int resteNouveauApresAssignation = nouveauVehicule.getPlace() - nbPassagers;
+
+        if (resteNouveauApresAssignation < resteBinApresAssignation) {
+            return true;
+        }
+        if (resteNouveauApresAssignation > resteBinApresAssignation) {
             return false;
         }
 
-        vehiculesUtilises.add(vehicule.getId());
-        bins.add(new VehiculeBin(vehicule.getId(), vehicule.getPlace() - reservation.getNb_passager()));
-        planifier(reservation.getId_reservation(), vehicule.getId(), depart, retourInitial);
-        recalculerRetourVehicule(vehicule.getId(), depart, context);
-        return true;
+        Vehicule vehiculeVirtuelBin = new Vehicule();
+        vehiculeVirtuelBin.setId(binCandidat.idVehicule);
+        // Ici, on compare la place restante effective après affectation potentielle.
+        vehiculeVirtuelBin.setPlace(binCandidat.placesRestantes);
+        vehiculeVirtuelBin.setTypeCarburant(binCandidat.typeCarburant);
+
+        List<Integer> ids = new ArrayList<>();
+        ids.add(binCandidat.idVehicule);
+        ids.add(nouveauVehicule.getId());
+        Map<Integer, Integer> nbTrajetsByVehicule = chargerNombreTrajetsParVehicule(ids);
+        int comparaison = comparerVehiculesSprint6(
+                nouveauVehicule,
+                vehiculeVirtuelBin,
+                nbPassagers,
+                nbTrajetsByVehicule);
+        return comparaison < 0;
     }
 
     private Vehicule choisirVehiculeAvecLookAhead(int nbPax,
