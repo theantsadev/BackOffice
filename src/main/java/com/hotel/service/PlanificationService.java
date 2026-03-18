@@ -569,7 +569,6 @@ public class PlanificationService {
         AutoPlanContext context = buildAutoPlanContext();
         List<Reservation> reservations = reservationService.getReservationByDate(date);
         List<Reservation> aTraiter = filtrerReservationsNonAssignees(reservations);
-        System.out.println(aTraiter.size() + " réservations à traiter pour la date " + date);
         LinkedHashMap<Long, List<Reservation>> groupes = construireGroupesParFenetreAttente(aTraiter,
                 context.attenteMillis);
         Map<Integer, Timestamp> departGroupeByReservation = new HashMap<>();
@@ -578,8 +577,6 @@ public class PlanificationService {
         for (Map.Entry<Long, List<Reservation>> entry : groupes.entrySet()) {
             Timestamp depart = new Timestamp(entry.getKey());
             List<Reservation> groupe = new ArrayList<>(entry.getValue());
-            groupe.addAll(reservationsNonAssignees);
-            reservationsNonAssignees.clear();
 
             try {
                 Timestamp retourInitial = calculerRetourPourGroupe(depart, groupe, context);
@@ -614,8 +611,7 @@ public class PlanificationService {
         return result;
     }
 
-    private List<Planification> filtrerPlanificationsParDepart(List<Planification> planifications,
-            long departFiltreMillis) {
+    private List<Planification> filtrerPlanificationsParDepart(List<Planification> planifications, long departFiltreMillis) {
         List<Planification> filtrees = new ArrayList<>();
         for (Planification planification : planifications) {
             Timestamp depart = planification.getDateHeureDepartAeroport();
@@ -626,8 +622,7 @@ public class PlanificationService {
         return filtrees;
     }
 
-    private List<Reservation> filtrerReservationsNonAssigneesParDepart(List<Reservation> reservations,
-            long departFiltreMillis) {
+    private List<Reservation> filtrerReservationsNonAssigneesParDepart(List<Reservation> reservations, long departFiltreMillis) {
         List<Reservation> filtrees = new ArrayList<>();
         for (Reservation reservation : reservations) {
             Timestamp depart = reservation.getDate_heure_depart_groupe();
@@ -646,12 +641,12 @@ public class PlanificationService {
         for (Planification planification : planifications) {
             Timestamp departGroupe = departGroupeByReservation.get(planification.getIdReservation());
             if (departGroupe != null && planification.getDateHeureDepartAeroport() != null) {
-                long deltaMillis = departGroupe.getTime() - planification.getDateHeureDepartAeroport().getTime();
-                planification.setDateHeureDepartAeroport(departGroupe);
-                if (planification.getDateHeureRetourAeroport() != null) {
-                    planification.setDateHeureRetourAeroport(
-                            new Timestamp(planification.getDateHeureRetourAeroport().getTime() + deltaMillis));
-                }
+            long deltaMillis = departGroupe.getTime() - planification.getDateHeureDepartAeroport().getTime();
+            planification.setDateHeureDepartAeroport(departGroupe);
+            if (planification.getDateHeureRetourAeroport() != null) {
+                planification.setDateHeureRetourAeroport(
+                    new Timestamp(planification.getDateHeureRetourAeroport().getTime() + deltaMillis));
+            }
             }
 
             long departMillis = planification.getDateHeureDepartAeroport() != null
