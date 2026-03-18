@@ -171,8 +171,8 @@ public class PlanificationService {
      * 2. Choisir celui qui laisse le moins de places vides
      * 3. A capacité égale: priorité au véhicule ayant fait le moins de trajets
      * 4. Si toujours égalité: priorité au Diesel ('D')
-        * 5. Si toujours égalité: tirage aléatoire
-        * 6. Le véhicule doit être disponible sur le créneau
+     * 5. Si toujours égalité: tirage aléatoire
+     * 6. Le véhicule doit être disponible sur le créneau
      * 
      * @param idReservation ID de la réservation
      * @return Le véhicule approprié ou null si aucun disponible
