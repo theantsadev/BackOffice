@@ -7,8 +7,11 @@ public class Reservation {
     private String id_client;
     private int nb_passager;
     private Timestamp date_heure_arrivee;
+    private Timestamp date_heure_depart_groupe;
     private int id_hotel;
     private String nom_hotel;
+    private int ordre_assign_groupe;
+    private int ordre_assign_global;
 
     public Reservation() {
     }
@@ -54,6 +57,14 @@ public class Reservation {
         this.date_heure_arrivee = date_heure_arrivee;
     }
 
+    public Timestamp getDate_heure_depart_groupe() {
+        return date_heure_depart_groupe;
+    }
+
+    public void setDate_heure_depart_groupe(Timestamp date_heure_depart_groupe) {
+        this.date_heure_depart_groupe = date_heure_depart_groupe;
+    }
+
     public int getId_hotel() {
         return id_hotel;
     }
@@ -68,5 +79,21 @@ public class Reservation {
 
     public void setNom_hotel(String nom_hotel) {
         this.nom_hotel = nom_hotel;
+    }
+
+    public int getOrdre_assign_groupe() {
+        return ordre_assign_groupe;
+    }
+
+    public void setOrdre_assign_groupe(int ordre_assign_groupe) {
+        this.ordre_assign_groupe = ordre_assign_groupe;
+    }
+
+    public int getOrdre_assign_global() {
+        return ordre_assign_global;
+    }
+
+    public void setOrdre_assign_global(int ordre_assign_global) {
+        this.ordre_assign_global = ordre_assign_global;
     }
 }
