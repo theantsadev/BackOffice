@@ -12,9 +12,15 @@ public class Planification {
     // Champs additionnels pour l'affichage (jointures)
     private String idClient;
     private int nbPassager;
+    private int idHotel;
     private String nomHotel;
     private String referenceVehicule;
     private double distanceAeroport; // distance aéroport → hôtel en km
+    private double distanceTotaleTrajet; // distance totale du trajet véhicule (aller + retour)
+    private double distanceSegmentKm; // distance depuis l'arrêt précédent
+    private double distanceProgressiveKm; // distance cumulée depuis l'aéroport
+    private int ordreAssignGroupe; // ordre d'assignation dans le groupe de depart
+    private int ordreAssignGlobal; // ordre d'assignation global sur la journee
     private int ordreDepot;          // ordre de dépôt : 1 = plus proche de l'aéroport
 
     public Planification() {
@@ -89,6 +95,14 @@ public class Planification {
         return nomHotel;
     }
 
+    public int getIdHotel() {
+        return idHotel;
+    }
+
+    public void setIdHotel(int idHotel) {
+        this.idHotel = idHotel;
+    }
+
     public void setNomHotel(String nomHotel) {
         this.nomHotel = nomHotel;
     }
@@ -107,6 +121,46 @@ public class Planification {
 
     public void setDistanceAeroport(double distanceAeroport) {
         this.distanceAeroport = distanceAeroport;
+    }
+
+    public double getDistanceTotaleTrajet() {
+        return distanceTotaleTrajet;
+    }
+
+    public void setDistanceTotaleTrajet(double distanceTotaleTrajet) {
+        this.distanceTotaleTrajet = distanceTotaleTrajet;
+    }
+
+    public double getDistanceSegmentKm() {
+        return distanceSegmentKm;
+    }
+
+    public void setDistanceSegmentKm(double distanceSegmentKm) {
+        this.distanceSegmentKm = distanceSegmentKm;
+    }
+
+    public double getDistanceProgressiveKm() {
+        return distanceProgressiveKm;
+    }
+
+    public void setDistanceProgressiveKm(double distanceProgressiveKm) {
+        this.distanceProgressiveKm = distanceProgressiveKm;
+    }
+
+    public int getOrdreAssignGroupe() {
+        return ordreAssignGroupe;
+    }
+
+    public void setOrdreAssignGroupe(int ordreAssignGroupe) {
+        this.ordreAssignGroupe = ordreAssignGroupe;
+    }
+
+    public int getOrdreAssignGlobal() {
+        return ordreAssignGlobal;
+    }
+
+    public void setOrdreAssignGlobal(int ordreAssignGlobal) {
+        this.ordreAssignGlobal = ordreAssignGlobal;
     }
 
     public int getOrdreDepot() {
