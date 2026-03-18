@@ -581,6 +581,8 @@ public class PlanificationService {
         for (Map.Entry<Long, List<Reservation>> entry : groupes.entrySet()) {
             Timestamp depart = new Timestamp(entry.getKey());
             List<Reservation> groupe = new ArrayList<>(entry.getValue());
+            groupe.addAll(reservationsNonAssignees);
+            reservationsNonAssignees.clear();
 
             try {
                 Timestamp retourInitial = calculerRetourPourGroupe(depart, groupe, context);
