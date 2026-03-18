@@ -164,12 +164,12 @@ public class PlanificationService {
     }
 
     /**
-     * Sélectionne le véhicule le plus approprié pour une réservation selon les
-     * règles de gestion:
+     * Sélectionne le véhicule le plus approprié pour une réservation selon Sprint
+     * 6:
      * 1. nb_passager <= place du véhicule
      * 2. Choisir celui qui laisse le moins de places vides
-     * 3. Si égalité → priorité au Diesel ('D')
-     * 4. Si égalité de capacité ET de type → random
+     * 3. A capacité égale: priorité au véhicule ayant fait le moins de trajets
+     * 4. Si toujours égalité: priorité au Diesel ('D')
      * 5. Le véhicule doit être disponible sur le créneau
      * 
      * @param idReservation ID de la réservation
@@ -187,21 +187,13 @@ public class PlanificationService {
         Timestamp depart = getDateHeureDepartAeroport(idReservation);
         Timestamp retour = getDateHeureRetourAeroport(idReservation);
 
-        // Récupérer tous les véhicules avec assez de places, triés selon les règles
-        // ORDER BY: 1) places - nb_passager ASC (moins de places vides)
-        // 2) type_carburant = 'D' DESC (Diesel en priorité)
-        // 3) RANDOM() pour départager
-        String sql = "SELECT * FROM Vehicule " +
-                "WHERE place >= ? " +
-                "ORDER BY (place - ?) ASC, " +
-                "CASE WHEN type_carburant = 'D' THEN 0 ELSE 1 END ASC, " +
-                "RANDOM()";
+        String sql = "SELECT * FROM Vehicule WHERE place >= ?";
 
         try (Connection conn = DatabaseConnection.getConnection();
                 PreparedStatement stmt = conn.prepareStatement(sql)) {
 
             stmt.setInt(1, nbPassagers);
-            stmt.setInt(2, nbPassagers);
+            List<Vehicule> candidatsDisponibles = new ArrayList<>();
 
             try (ResultSet rs = stmt.executeQuery()) {
                 while (rs.next()) {
@@ -213,9 +205,17 @@ public class PlanificationService {
 
                     // Vérifier la disponibilité sur le créneau
                     if (estVoitureDisponible(vehicule.getId(), depart, retour)) {
-                        return vehicule;
+                        candidatsDisponibles.add(vehicule);
                     }
                 }
+            }
+
+            if (!candidatsDisponibles.isEmpty()) {
+                Map<Integer, Integer> nbTrajetsByVehicule = chargerNombreTrajetsParVehicule(
+                        extraireIdsVehicules(candidatsDisponibles));
+                candidatsDisponibles.sort(
+                        (a, b) -> comparerVehiculesSprint6(a, b, nbPassagers, nbTrajetsByVehicule));
+                return candidatsDisponibles.get(0);
             }
         }
 
@@ -527,7 +527,6 @@ public class PlanificationService {
                 sql.append(i == 0 ? "?" : ",?");
             sql.append(")");
         }
-        sql.append(" ORDER BY place ASC, CASE WHEN type_carburant = 'D' THEN 0 ELSE 1 END ASC");
         try (Connection conn = DatabaseConnection.getConnection();
                 PreparedStatement stmt = conn.prepareStatement(sql.toString())) {
             int idx = 1;
@@ -546,6 +545,12 @@ public class PlanificationService {
                 }
             }
         }
+
+        if (!result.isEmpty()) {
+            Map<Integer, Integer> nbTrajetsByVehicule = chargerNombreTrajetsParVehicule(extraireIdsVehicules(result));
+            result.sort((a, b) -> comparerVehiculesSprint6(a, b, nbPax, nbTrajetsByVehicule));
+        }
+
         return result;
     }
 
@@ -568,13 +573,6 @@ public class PlanificationService {
                 context.attenteMillis);
         Map<Integer, Timestamp> departGroupeByReservation = new HashMap<>();
 
-        for (Map.Entry<Long, List<Reservation>> entry : groupes.entrySet()) {
-            Timestamp depart = new Timestamp(entry.getKey());
-            for (Reservation reservation : entry.getValue()) {
-                departGroupeByReservation.put(reservation.getId_reservation(), depart);
-            }
-        }
-
         List<Reservation> reservationsNonAssignees = new ArrayList<>();
         for (Map.Entry<Long, List<Reservation>> entry : groupes.entrySet()) {
             Timestamp depart = new Timestamp(entry.getKey());
@@ -587,6 +585,12 @@ public class PlanificationService {
                 int refId = groupe.isEmpty() ? -1 : groupe.get(0).getId_reservation();
                 System.err.println("Erreur de planification du groupe (réservation " + refId + "): " + e.getMessage());
                 reservationsNonAssignees.addAll(groupe);
+            }
+
+            Timestamp departGroupeAssigne = calculerDepartGroupeSelonAssignations(groupe, reservationsNonAssignees,
+                    depart);
+            for (Reservation reservation : groupe) {
+                departGroupeByReservation.put(reservation.getId_reservation(), departGroupeAssigne);
             }
         }
 
@@ -635,6 +639,16 @@ public class PlanificationService {
         List<AssignOrderItem> items = new ArrayList<>();
 
         for (Planification planification : planifications) {
+            Timestamp departGroupe = departGroupeByReservation.get(planification.getIdReservation());
+            if (departGroupe != null && planification.getDateHeureDepartAeroport() != null) {
+            long deltaMillis = departGroupe.getTime() - planification.getDateHeureDepartAeroport().getTime();
+            planification.setDateHeureDepartAeroport(departGroupe);
+            if (planification.getDateHeureRetourAeroport() != null) {
+                planification.setDateHeureRetourAeroport(
+                    new Timestamp(planification.getDateHeureRetourAeroport().getTime() + deltaMillis));
+            }
+            }
+
             long departMillis = planification.getDateHeureDepartAeroport() != null
                     ? planification.getDateHeureDepartAeroport().getTime()
                     : 0;
@@ -935,19 +949,110 @@ public class PlanificationService {
         List<Vehicule> candidats = getAllVehiculesLibres(nbPax, depart, retour, vehiculesUtilises);
         Vehicule meilleurVehicule = null;
         int meilleurGaspillage = Integer.MAX_VALUE;
+        Map<Integer, Integer> nbTrajetsByVehicule = chargerNombreTrajetsParVehicule(extraireIdsVehicules(candidats));
 
         for (Vehicule candidat : candidats) {
             int placesRestantes = candidat.getPlace() - nbPax;
             int gaspillage = evaluerGaspillage(placesRestantes, restantes);
             if (gaspillage < meilleurGaspillage
                     || (gaspillage == meilleurGaspillage && meilleurVehicule != null
-                            && candidat.getPlace() < meilleurVehicule.getPlace())) {
+                            && comparerVehiculesSprint6(candidat, meilleurVehicule, nbPax, nbTrajetsByVehicule) < 0)) {
                 meilleurGaspillage = gaspillage;
+                meilleurVehicule = candidat;
+            } else if (gaspillage == meilleurGaspillage && meilleurVehicule == null) {
                 meilleurVehicule = candidat;
             }
         }
 
         return meilleurVehicule;
+    }
+
+    private Timestamp calculerDepartGroupeSelonAssignations(List<Reservation> groupe,
+            List<Reservation> reservationsNonAssignees,
+            Timestamp fallback) {
+        Set<Integer> nonAssigneesIds = new HashSet<>();
+        for (Reservation reservation : reservationsNonAssignees) {
+            nonAssigneesIds.add(reservation.getId_reservation());
+        }
+
+        Timestamp maxArriveeAssignee = null;
+        for (Reservation reservation : groupe) {
+            if (nonAssigneesIds.contains(reservation.getId_reservation())) {
+                continue;
+            }
+
+            Timestamp arrivee = reservation.getDate_heure_arrivee();
+            if (arrivee != null && (maxArriveeAssignee == null || arrivee.after(maxArriveeAssignee))) {
+                maxArriveeAssignee = arrivee;
+            }
+        }
+
+        return maxArriveeAssignee != null ? maxArriveeAssignee : fallback;
+    }
+
+    private List<Integer> extraireIdsVehicules(List<Vehicule> vehicules) {
+        List<Integer> ids = new ArrayList<>();
+        for (Vehicule vehicule : vehicules) {
+            ids.add(vehicule.getId());
+        }
+        return ids;
+    }
+
+    private Map<Integer, Integer> chargerNombreTrajetsParVehicule(List<Integer> vehiculeIds) throws SQLException {
+        Map<Integer, Integer> nbTrajetsByVehicule = new HashMap<>();
+        if (vehiculeIds.isEmpty()) {
+            return nbTrajetsByVehicule;
+        }
+
+        StringBuilder sql = new StringBuilder(
+                "SELECT id_vehicule, COUNT(DISTINCT date_heure_depart_aeroport) AS nb_trajets FROM Planification WHERE id_vehicule IN (");
+        for (int i = 0; i < vehiculeIds.size(); i++) {
+            sql.append(i == 0 ? "?" : ",?");
+        }
+        sql.append(") GROUP BY id_vehicule");
+
+        try (Connection conn = DatabaseConnection.getConnection();
+                PreparedStatement stmt = conn.prepareStatement(sql.toString())) {
+            int idx = 1;
+            for (Integer vehiculeId : vehiculeIds) {
+                stmt.setInt(idx++, vehiculeId);
+            }
+
+            try (ResultSet rs = stmt.executeQuery()) {
+                while (rs.next()) {
+                    nbTrajetsByVehicule.put(rs.getInt("id_vehicule"), rs.getInt("nb_trajets"));
+                }
+            }
+        }
+
+        return nbTrajetsByVehicule;
+    }
+
+    private int comparerVehiculesSprint6(Vehicule a,
+            Vehicule b,
+            int nbPassagers,
+            Map<Integer, Integer> nbTrajetsByVehicule) {
+        int videA = a.getPlace() - nbPassagers;
+        int videB = b.getPlace() - nbPassagers;
+        int cmpCapacite = Integer.compare(videA, videB);
+        if (cmpCapacite != 0) {
+            return cmpCapacite;
+        }
+
+        int trajetsA = nbTrajetsByVehicule.getOrDefault(a.getId(), 0);
+        int trajetsB = nbTrajetsByVehicule.getOrDefault(b.getId(), 0);
+        int cmpTrajets = Integer.compare(trajetsA, trajetsB);
+        if (cmpTrajets != 0) {
+            return cmpTrajets;
+        }
+
+        boolean dieselA = "D".equalsIgnoreCase(a.getTypeCarburant());
+        boolean dieselB = "D".equalsIgnoreCase(b.getTypeCarburant());
+        if (dieselA != dieselB) {
+            return dieselA ? -1 : 1;
+        }
+
+        return Integer.compare(a.getId(), b.getId());
     }
 
     private int evaluerGaspillage(int placesRestantes, List<Reservation> restantes) {
