@@ -7,12 +7,10 @@ import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashSet;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 import com.hotel.database.DatabaseConnection;
 import com.hotel.model.Hotel;
@@ -236,9 +234,24 @@ public class PlanificationService {
      */
     public Planification planifier(int idReservation, int idVehicule,
             Timestamp dateHeureDepart, Timestamp dateHeureRetour) throws SQLException {
+        Reservation reservation = getReservationById(idReservation);
+        if (reservation == null) {
+            throw new SQLException("Réservation non trouvée: " + idReservation);
+        }
+
+        return planifier(idReservation, idVehicule, dateHeureDepart, dateHeureRetour, reservation.getNb_passager());
+    }
+
+    public Planification planifier(int idReservation, int idVehicule,
+            Timestamp dateHeureDepart, Timestamp dateHeureRetour,
+            int nbPassagersAssignes) throws SQLException {
+        if (nbPassagersAssignes <= 0) {
+            throw new SQLException("Nombre de passagers assignés invalide: " + nbPassagersAssignes);
+        }
+
         String sql = "INSERT INTO Planification (id_reservation, id_vehicule, " +
-                "date_heure_depart_aeroport, date_heure_retour_aeroport) " +
-                "VALUES (?, ?, ?, ?) RETURNING id_planification";
+                "date_heure_depart_aeroport, date_heure_retour_aeroport, nb_passager_assigne) " +
+                "VALUES (?, ?, ?, ?, ?) RETURNING id_planification";
 
         try (Connection conn = DatabaseConnection.getConnection();
                 PreparedStatement stmt = conn.prepareStatement(sql)) {
@@ -247,6 +260,7 @@ public class PlanificationService {
             stmt.setInt(2, idVehicule);
             stmt.setTimestamp(3, dateHeureDepart);
             stmt.setTimestamp(4, dateHeureRetour);
+            stmt.setInt(5, nbPassagersAssignes);
 
             try (ResultSet rs = stmt.executeQuery()) {
                 if (rs.next()) {
@@ -256,6 +270,7 @@ public class PlanificationService {
                     planification.setIdVehicule(idVehicule);
                     planification.setDateHeureDepartAeroport(dateHeureDepart);
                     planification.setDateHeureRetourAeroport(dateHeureRetour);
+                    planification.setNbPassager(nbPassagersAssignes);
                     return planification;
                 }
             }
@@ -278,7 +293,7 @@ public class PlanificationService {
         List<Planification> planifications = new ArrayList<>();
 
         // On récupère aussi la distance aéroport (id=0) → hôtel via LEFT JOIN
-        String sql = "SELECT p.*, r.id_client, r.nb_passager, r.id_hotel, " +
+        String sql = "SELECT p.*, r.id_client, COALESCE(p.nb_passager_assigne, r.nb_passager) as nb_passager_planifie, r.id_hotel, " +
                 "h.nom as nom_hotel, v.reference as reference_vehicule, " +
                 "COALESCE(d.valeur, -1) as distance_aeroport " +
                 "FROM Planification p " +
@@ -303,7 +318,7 @@ public class PlanificationService {
                     planification.setDateHeureDepartAeroport(rs.getTimestamp("date_heure_depart_aeroport"));
                     planification.setDateHeureRetourAeroport(rs.getTimestamp("date_heure_retour_aeroport"));
                     planification.setIdClient(rs.getString("id_client"));
-                    planification.setNbPassager(rs.getInt("nb_passager"));
+                    planification.setNbPassager(rs.getInt("nb_passager_planifie"));
                     planification.setIdHotel(rs.getInt("id_hotel"));
                     planification.setNomHotel(rs.getString("nom_hotel"));
                     planification.setReferenceVehicule(rs.getString("reference_vehicule"));
@@ -368,9 +383,18 @@ public class PlanificationService {
     public List<Reservation> getReservationsNonAssignees() throws SQLException {
         List<Reservation> reservations = new ArrayList<>();
 
-        String sql = "SELECT r.*, h.nom as nom_hotel FROM Reservation r " +
-                "LEFT JOIN Hotel h ON r.id_hotel = h.id_hotel " +
-                "WHERE r.id_reservation NOT IN (SELECT id_reservation FROM Planification) " +
+        String sql = "SELECT r.id_reservation, r.id_client, " +
+            "(r.nb_passager - COALESCE(pa.nb_assigne, 0)) AS nb_passager_restant, " +
+            "r.date_heure_arrivee, r.id_hotel, h.nom as nom_hotel " +
+            "FROM Reservation r " +
+            "LEFT JOIN Hotel h ON r.id_hotel = h.id_hotel " +
+            "LEFT JOIN (" +
+            "   SELECT p.id_reservation, SUM(COALESCE(p.nb_passager_assigne, r2.nb_passager)) as nb_assigne " +
+            "   FROM Planification p " +
+            "   JOIN Reservation r2 ON r2.id_reservation = p.id_reservation " +
+            "   GROUP BY p.id_reservation" +
+            ") pa ON pa.id_reservation = r.id_reservation " +
+            "WHERE (r.nb_passager - COALESCE(pa.nb_assigne, 0)) > 0 " +
                 "ORDER BY r.date_heure_arrivee";
 
         try (Connection conn = DatabaseConnection.getConnection();
@@ -381,7 +405,7 @@ public class PlanificationService {
                 Reservation reservation = new Reservation();
                 reservation.setId_reservation(rs.getInt("id_reservation"));
                 reservation.setId_client(rs.getString("id_client"));
-                reservation.setNb_passager(rs.getInt("nb_passager"));
+                reservation.setNb_passager(rs.getInt("nb_passager_restant"));
                 reservation.setDate_heure_arrivee(rs.getTimestamp("date_heure_arrivee"));
                 reservation.setId_hotel(rs.getInt("id_hotel"));
                 reservation.setNom_hotel(rs.getString("nom_hotel"));
@@ -575,7 +599,6 @@ public class PlanificationService {
         List<Reservation> aTraiter = filtrerReservationsNonAssignees(reservations);
         LinkedHashMap<Long, List<Reservation>> groupes = construireGroupesParFenetreAttente(aTraiter,
                 context.attenteMillis);
-        Map<Integer, Timestamp> departGroupeByReservation = new HashMap<>();
 
         List<Reservation> reservationsNonAssignees = new ArrayList<>();
         for (Map.Entry<Long, List<Reservation>> entry : groupes.entrySet()) {
@@ -593,15 +616,10 @@ public class PlanificationService {
                 reservationsNonAssignees.addAll(groupe);
             }
 
-            Timestamp departGroupeAssigne = calculerDepartGroupeSelonAssignations(groupe, reservationsNonAssignees,
-                    depart);
-            for (Reservation reservation : groupe) {
-                departGroupeByReservation.put(reservation.getId_reservation(), departGroupeAssigne);
-            }
         }
 
         List<Planification> planifications = getPlanificationsByDate(date);
-        appliquerOrdresAssignation(planifications, reservationsNonAssignees, departGroupeByReservation);
+        appliquerOrdresAssignation(planifications, reservationsNonAssignees);
 
         if (departGroupeFiltre != null) {
             long departFiltreMillis = departGroupeFiltre.getTime();
@@ -640,21 +658,10 @@ public class PlanificationService {
     }
 
     private void appliquerOrdresAssignation(List<Planification> planifications,
-            List<Reservation> reservationsNonAssignees,
-            Map<Integer, Timestamp> departGroupeByReservation) {
+            List<Reservation> reservationsNonAssignees) {
         List<AssignOrderItem> items = new ArrayList<>();
 
         for (Planification planification : planifications) {
-            Timestamp departGroupe = departGroupeByReservation.get(planification.getIdReservation());
-            if (departGroupe != null && planification.getDateHeureDepartAeroport() != null) {
-            long deltaMillis = departGroupe.getTime() - planification.getDateHeureDepartAeroport().getTime();
-            planification.setDateHeureDepartAeroport(departGroupe);
-            if (planification.getDateHeureRetourAeroport() != null) {
-                planification.setDateHeureRetourAeroport(
-                    new Timestamp(planification.getDateHeureRetourAeroport().getTime() + deltaMillis));
-            }
-            }
-
             long departMillis = planification.getDateHeureDepartAeroport() != null
                     ? planification.getDateHeureDepartAeroport().getTime()
                     : 0;
@@ -666,9 +673,10 @@ public class PlanificationService {
         }
 
         for (Reservation reservation : reservationsNonAssignees) {
-            Timestamp departGroupe = departGroupeByReservation.get(reservation.getId_reservation());
+            Timestamp departGroupe = reservation.getDate_heure_depart_groupe();
             if (departGroupe == null) {
                 departGroupe = reservation.getDate_heure_arrivee();
+                reservation.setDate_heure_depart_groupe(departGroupe);
             }
             reservation.setDate_heure_depart_groupe(departGroupe);
             long departMillis = departGroupe != null ? departGroupe.getTime() : 0;
@@ -713,18 +721,18 @@ public class PlanificationService {
             items.get(i).ordreGlobal = i + 1;
         }
 
-        Map<Integer, AssignOrderItem> assignedMap = new HashMap<>();
-        Map<Integer, AssignOrderItem> nonAssignedMap = new HashMap<>();
+        Map<Integer, List<AssignOrderItem>> assignedMap = new HashMap<>();
+        Map<Integer, List<AssignOrderItem>> nonAssignedMap = new HashMap<>();
         for (AssignOrderItem item : items) {
             if (item.assigned) {
-                assignedMap.put(item.idReservation, item);
+                assignedMap.computeIfAbsent(item.idReservation, k -> new ArrayList<>()).add(item);
             } else {
-                nonAssignedMap.put(item.idReservation, item);
+                nonAssignedMap.computeIfAbsent(item.idReservation, k -> new ArrayList<>()).add(item);
             }
         }
 
         for (Planification planification : planifications) {
-            AssignOrderItem item = assignedMap.get(planification.getIdReservation());
+            AssignOrderItem item = extrairePremierItem(assignedMap, planification.getIdReservation());
             if (item != null) {
                 planification.setOrdreAssignGroupe(item.ordreGroupe);
                 planification.setOrdreAssignGlobal(item.ordreGlobal);
@@ -732,12 +740,25 @@ public class PlanificationService {
         }
 
         for (Reservation reservation : reservationsNonAssignees) {
-            AssignOrderItem item = nonAssignedMap.get(reservation.getId_reservation());
+            AssignOrderItem item = extrairePremierItem(nonAssignedMap, reservation.getId_reservation());
             if (item != null) {
                 reservation.setOrdre_assign_groupe(item.ordreGroupe);
                 reservation.setOrdre_assign_global(item.ordreGlobal);
             }
         }
+    }
+
+    private AssignOrderItem extrairePremierItem(Map<Integer, List<AssignOrderItem>> map, int idReservation) {
+        List<AssignOrderItem> items = map.get(idReservation);
+        if (items == null || items.isEmpty()) {
+            return null;
+        }
+
+        AssignOrderItem premier = items.remove(0);
+        if (items.isEmpty()) {
+            map.remove(idReservation);
+        }
+        return premier;
     }
 
     private AutoPlanContext buildAutoPlanContext() throws SQLException {
@@ -750,10 +771,12 @@ public class PlanificationService {
 
     private List<Reservation> filtrerReservationsNonAssignees(List<Reservation> reservations) throws SQLException {
         List<Reservation> aTraiter = new ArrayList<>();
-        Set<Integer> dejaAssignees = chargerReservationIdsDejaAssignees(reservations);
+        Map<Integer, Integer> passagersAssignes = chargerPassagersAssignesParReservation(reservations);
         for (Reservation reservation : reservations) {
-            if (!dejaAssignees.contains(reservation.getId_reservation())) {
-                aTraiter.add(reservation);
+            int dejaAssigne = passagersAssignes.getOrDefault(reservation.getId_reservation(), 0);
+            int passagersRestants = reservation.getNb_passager() - dejaAssigne;
+            if (passagersRestants > 0) {
+                aTraiter.add(copierReservationAvecNbPassagers(reservation, passagersRestants));
             }
         }
 
@@ -761,18 +784,22 @@ public class PlanificationService {
         return aTraiter;
     }
 
-    private Set<Integer> chargerReservationIdsDejaAssignees(List<Reservation> reservations) throws SQLException {
-        Set<Integer> assignees = new HashSet<>();
+    private Map<Integer, Integer> chargerPassagersAssignesParReservation(List<Reservation> reservations)
+            throws SQLException {
+        Map<Integer, Integer> passagersAssignes = new HashMap<>();
         if (reservations.isEmpty()) {
-            return assignees;
+            return passagersAssignes;
         }
 
         StringBuilder sql = new StringBuilder(
-                "SELECT DISTINCT id_reservation FROM Planification WHERE id_reservation IN (");
+                "SELECT p.id_reservation, SUM(COALESCE(p.nb_passager_assigne, r.nb_passager)) as nb_assigne " +
+                        "FROM Planification p " +
+                        "JOIN Reservation r ON r.id_reservation = p.id_reservation " +
+                        "WHERE p.id_reservation IN (");
         for (int i = 0; i < reservations.size(); i++) {
             sql.append(i == 0 ? "?" : ",?");
         }
-        sql.append(")");
+        sql.append(") GROUP BY p.id_reservation");
 
         try (Connection conn = DatabaseConnection.getConnection();
                 PreparedStatement stmt = conn.prepareStatement(sql.toString())) {
@@ -783,12 +810,24 @@ public class PlanificationService {
 
             try (ResultSet rs = stmt.executeQuery()) {
                 while (rs.next()) {
-                    assignees.add(rs.getInt("id_reservation"));
+                    passagersAssignes.put(rs.getInt("id_reservation"), rs.getInt("nb_assigne"));
                 }
             }
         }
 
-        return assignees;
+        return passagersAssignes;
+    }
+
+    private Reservation copierReservationAvecNbPassagers(Reservation source, int nbPassagers) {
+        Reservation copie = new Reservation();
+        copie.setId_reservation(source.getId_reservation());
+        copie.setId_client(source.getId_client());
+        copie.setNb_passager(nbPassagers);
+        copie.setDate_heure_arrivee(source.getDate_heure_arrivee());
+        copie.setDate_heure_depart_groupe(source.getDate_heure_depart_groupe());
+        copie.setId_hotel(source.getId_hotel());
+        copie.setNom_hotel(source.getNom_hotel());
+        return copie;
     }
 
     private LinkedHashMap<Long, List<Reservation>> construireGroupesParFenetreAttente(
@@ -850,57 +889,90 @@ public class PlanificationService {
 
         for (int i = 0; i < groupe.size(); i++) {
             Reservation reservation = groupe.get(i);
-            int bestBinIdx = trouverMeilleurBin(bins, reservation.getNb_passager());
-            Vehicule meilleurNouveauVehicule = choisirVehiculeAvecLookAhead(
-                    reservation.getNb_passager(),
-                    depart,
-                    retourInitial,
-                    vehiculesUtilises,
-                    groupe.subList(i + 1, groupe.size()));
+            int passagersRestants = reservation.getNb_passager();
 
             try {
-                boolean peutAssignerBin = bestBinIdx >= 0;
-                boolean peutOuvrirNouveau = meilleurNouveauVehicule != null;
+                while (passagersRestants > 0) {
+                    int bestBinIdx = trouverMeilleurBin(bins, passagersRestants);
+                    Vehicule meilleurNouveauVehicule = choisirVehiculeAvecLookAhead(
+                            passagersRestants,
+                            depart,
+                            retourInitial,
+                            vehiculesUtilises,
+                            groupe.subList(i + 1, groupe.size()));
 
-                if (!peutAssignerBin && !peutOuvrirNouveau) {
-                    reservationsNonAssignees.add(reservation);
-                    continue;
+                    boolean peutAssignerBin = bestBinIdx >= 0;
+                    boolean peutOuvrirNouveau = meilleurNouveauVehicule != null;
+
+                    if (!peutAssignerBin && !peutOuvrirNouveau) {
+                        break;
+                    }
+
+                    if (peutAssignerBin && !peutOuvrirNouveau) {
+                        VehiculeBin bin = bins.get(bestBinIdx);
+                        int passagersAffectes = Math.min(passagersRestants, bin.placesRestantes);
+                        assignerSurBinExistant(reservation, depart, retourInitial, bin, passagersAffectes, context);
+                        passagersRestants -= passagersAffectes;
+                        continue;
+                    }
+
+                    if (!peutAssignerBin) {
+                        Vehicule nouveauVehicule = meilleurNouveauVehicule;
+                        if (nouveauVehicule == null) {
+                            break;
+                        }
+                        int passagersAffectes = Math.min(passagersRestants, nouveauVehicule.getPlace());
+                        assignerSurNouveauVehicule(reservation, depart, retourInitial, context, vehiculesUtilises, bins,
+                            nouveauVehicule, passagersAffectes);
+                        passagersRestants -= passagersAffectes;
+                        continue;
+                    }
+
+                    VehiculeBin binCandidat = bins.get(bestBinIdx);
+                        Vehicule nouveauVehicule = meilleurNouveauVehicule;
+                        if (nouveauVehicule == null) {
+                        int passagersAffectes = Math.min(passagersRestants, binCandidat.placesRestantes);
+                        assignerSurBinExistant(reservation, depart, retourInitial, binCandidat, passagersAffectes,
+                            context);
+                        passagersRestants -= passagersAffectes;
+                        continue;
+                        }
+                    boolean prendreNouveau = doitPrendreNouveauVehicule(
+                            binCandidat,
+                            nouveauVehicule,
+                            passagersRestants);
+
+                    if (prendreNouveau) {
+                        int passagersAffectes = Math.min(passagersRestants, nouveauVehicule.getPlace());
+                        assignerSurNouveauVehicule(reservation, depart, retourInitial, context, vehiculesUtilises, bins,
+                            nouveauVehicule, passagersAffectes);
+                        passagersRestants -= passagersAffectes;
+                    } else {
+                        int passagersAffectes = Math.min(passagersRestants, binCandidat.placesRestantes);
+                        assignerSurBinExistant(reservation, depart, retourInitial, binCandidat, passagersAffectes,
+                                context);
+                        passagersRestants -= passagersAffectes;
+                    }
                 }
 
-                if (peutAssignerBin && !peutOuvrirNouveau) {
-                    assignerSurBinExistant(reservation, depart, retourInitial, bins.get(bestBinIdx), context);
-                    continue;
-                }
-
-                if (!peutAssignerBin) {
-                    assignerSurNouveauVehicule(reservation, depart, retourInitial, context, vehiculesUtilises, bins,
-                            meilleurNouveauVehicule);
-                    continue;
-                }
-
-                VehiculeBin binCandidat = bins.get(bestBinIdx);
-                boolean prendreNouveau = doitPrendreNouveauVehicule(
-                        binCandidat,
-                        meilleurNouveauVehicule,
-                        reservation.getNb_passager());
-
-                if (prendreNouveau) {
-                    assignerSurNouveauVehicule(reservation, depart, retourInitial, context, vehiculesUtilises, bins,
-                            meilleurNouveauVehicule);
-                } else {
-                    assignerSurBinExistant(reservation, depart, retourInitial, binCandidat, context);
+                if (passagersRestants > 0) {
+                    Reservation restante = copierReservationAvecNbPassagers(reservation, passagersRestants);
+                    restante.setDate_heure_depart_groupe(depart);
+                    reservationsNonAssignees.add(restante);
                 }
             } catch (Exception e) {
                 System.err.println("Erreur planification auto pour réservation "
                         + reservation.getId_reservation() + ": " + e.getMessage());
-                reservationsNonAssignees.add(reservation);
+                Reservation restante = copierReservationAvecNbPassagers(reservation, passagersRestants);
+                restante.setDate_heure_depart_groupe(depart);
+                reservationsNonAssignees.add(restante);
             }
         }
     }
 
     private List<VehiculeBin> chargerBinsExistants(Timestamp depart, List<Integer> vehiculesUtilises) {
         List<VehiculeBin> bins = new ArrayList<>();
-        String sql = "SELECT p.id_vehicule, v.place, v.type_carburant, COALESCE(SUM(r.nb_passager),0) as places_prises " +
+        String sql = "SELECT p.id_vehicule, v.place, v.type_carburant, COALESCE(SUM(COALESCE(p.nb_passager_assigne, r.nb_passager)),0) as places_prises " +
                 "FROM Planification p " +
                 "JOIN Vehicule v ON v.id = p.id_vehicule " +
                 "JOIN Reservation r ON r.id_reservation = p.id_reservation " +
@@ -931,8 +1003,13 @@ public class PlanificationService {
 
         for (int i = 0; i < bins.size(); i++) {
             int reste = bins.get(i).placesRestantes;
-            if (reste >= nbPassagers && reste < bestReste) {
-                bestReste = reste;
+            int passagersAffectes = Math.min(reste, nbPassagers);
+            if (passagersAffectes <= 0) {
+                continue;
+            }
+            int resteApresAssignation = reste - passagersAffectes;
+            if (resteApresAssignation < bestReste) {
+                bestReste = resteApresAssignation;
                 bestIdx = i;
             }
         }
@@ -943,9 +1020,14 @@ public class PlanificationService {
             Timestamp depart,
             Timestamp retourInitial,
             VehiculeBin bin,
+            int nbPassagersAffectes,
             AutoPlanContext context) throws SQLException {
-        bin.placesRestantes -= reservation.getNb_passager();
-        planifier(reservation.getId_reservation(), bin.idVehicule, depart, retourInitial);
+        if (nbPassagersAffectes <= 0) {
+            return;
+        }
+
+        bin.placesRestantes -= nbPassagersAffectes;
+        planifier(reservation.getId_reservation(), bin.idVehicule, depart, retourInitial, nbPassagersAffectes);
         recalculerRetourVehicule(bin.idVehicule, depart, context);
     }
 
@@ -955,21 +1037,36 @@ public class PlanificationService {
             AutoPlanContext context,
             List<Integer> vehiculesUtilises,
             List<VehiculeBin> bins,
-            Vehicule vehicule) throws SQLException {
+            Vehicule vehicule,
+            int nbPassagersAffectes) throws SQLException {
+        if (nbPassagersAffectes <= 0) {
+            return;
+        }
+
         vehiculesUtilises.add(vehicule.getId());
         bins.add(new VehiculeBin(
                 vehicule.getId(),
-                vehicule.getPlace() - reservation.getNb_passager(),
+                vehicule.getPlace() - nbPassagersAffectes,
                 vehicule.getTypeCarburant()));
-        planifier(reservation.getId_reservation(), vehicule.getId(), depart, retourInitial);
+        planifier(reservation.getId_reservation(), vehicule.getId(), depart, retourInitial, nbPassagersAffectes);
         recalculerRetourVehicule(vehicule.getId(), depart, context);
     }
 
     private boolean doitPrendreNouveauVehicule(VehiculeBin binCandidat,
             Vehicule nouveauVehicule,
-            int nbPassagers) throws SQLException {
-        int resteBinApresAssignation = binCandidat.placesRestantes - nbPassagers;
-        int resteNouveauApresAssignation = nouveauVehicule.getPlace() - nbPassagers;
+            int passagersRestants) throws SQLException {
+        int passagersAffectesBin = Math.min(passagersRestants, binCandidat.placesRestantes);
+        int passagersAffectesNouveau = Math.min(passagersRestants, nouveauVehicule.getPlace());
+
+        if (passagersAffectesNouveau > passagersAffectesBin) {
+            return true;
+        }
+        if (passagersAffectesNouveau < passagersAffectesBin) {
+            return false;
+        }
+
+        int resteBinApresAssignation = binCandidat.placesRestantes - passagersAffectesBin;
+        int resteNouveauApresAssignation = nouveauVehicule.getPlace() - passagersAffectesNouveau;
 
         if (resteNouveauApresAssignation < resteBinApresAssignation) {
             return true;
@@ -988,10 +1085,12 @@ public class PlanificationService {
         ids.add(binCandidat.idVehicule);
         ids.add(nouveauVehicule.getId());
         Map<Integer, Integer> nbTrajetsByVehicule = chargerNombreTrajetsParVehicule(ids);
+        int passagersComparaison = Math.min(passagersRestants,
+            Math.min(binCandidat.placesRestantes, nouveauVehicule.getPlace()));
         int comparaison = comparerVehiculesSprint6(
                 nouveauVehicule,
                 vehiculeVirtuelBin,
-                nbPassagers,
+            passagersComparaison,
                 nbTrajetsByVehicule);
         return comparaison < 0;
     }
@@ -1001,17 +1100,19 @@ public class PlanificationService {
             Timestamp retour,
             List<Integer> vehiculesUtilises,
             List<Reservation> restantes) throws SQLException {
-        List<Vehicule> candidats = getAllVehiculesLibres(nbPax, depart, retour, vehiculesUtilises);
+        List<Vehicule> candidats = getAllVehiculesLibres(1, depart, retour, vehiculesUtilises);
         Vehicule meilleurVehicule = null;
         int meilleurGaspillage = Integer.MAX_VALUE;
         Map<Integer, Integer> nbTrajetsByVehicule = chargerNombreTrajetsParVehicule(extraireIdsVehicules(candidats));
 
         for (Vehicule candidat : candidats) {
-            int placesRestantes = candidat.getPlace() - nbPax;
+            int passagersAffectes = Math.min(nbPax, candidat.getPlace());
+            int placesRestantes = candidat.getPlace() - passagersAffectes;
             int gaspillage = evaluerGaspillage(placesRestantes, restantes);
             if (gaspillage < meilleurGaspillage
                     || (gaspillage == meilleurGaspillage && meilleurVehicule != null
-                            && comparerVehiculesSprint6(candidat, meilleurVehicule, nbPax, nbTrajetsByVehicule) < 0)) {
+                            && comparerVehiculesSprint6(candidat, meilleurVehicule, passagersAffectes,
+                                    nbTrajetsByVehicule) < 0)) {
                 meilleurGaspillage = gaspillage;
                 meilleurVehicule = candidat;
             } else if (gaspillage == meilleurGaspillage && meilleurVehicule == null) {
@@ -1020,29 +1121,6 @@ public class PlanificationService {
         }
 
         return meilleurVehicule;
-    }
-
-    private Timestamp calculerDepartGroupeSelonAssignations(List<Reservation> groupe,
-            List<Reservation> reservationsNonAssignees,
-            Timestamp fallback) {
-        Set<Integer> nonAssigneesIds = new HashSet<>();
-        for (Reservation reservation : reservationsNonAssignees) {
-            nonAssigneesIds.add(reservation.getId_reservation());
-        }
-
-        Timestamp maxArriveeAssignee = null;
-        for (Reservation reservation : groupe) {
-            if (nonAssigneesIds.contains(reservation.getId_reservation())) {
-                continue;
-            }
-
-            Timestamp arrivee = reservation.getDate_heure_arrivee();
-            if (arrivee != null && (maxArriveeAssignee == null || arrivee.after(maxArriveeAssignee))) {
-                maxArriveeAssignee = arrivee;
-            }
-        }
-
-        return maxArriveeAssignee != null ? maxArriveeAssignee : fallback;
     }
 
     private List<Integer> extraireIdsVehicules(List<Vehicule> vehicules) {
