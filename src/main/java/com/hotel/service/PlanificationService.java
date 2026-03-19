@@ -295,7 +295,8 @@ public class PlanificationService {
         List<Planification> planifications = new ArrayList<>();
 
         // On récupère aussi la distance aéroport (id=0) → hôtel via LEFT JOIN
-        String sql = "SELECT p.*, r.id_client, COALESCE(p.nb_passager_assigne, r.nb_passager) as nb_passager_planifie, r.id_hotel, " +
+        String sql = "SELECT p.*, r.id_client, COALESCE(p.nb_passager_assigne, r.nb_passager) as nb_passager_planifie, r.id_hotel, "
+                +
                 "h.nom as nom_hotel, v.reference as reference_vehicule, " +
                 "COALESCE(d.valeur, -1) as distance_aeroport " +
                 "FROM Planification p " +
@@ -386,17 +387,17 @@ public class PlanificationService {
         List<Reservation> reservations = new ArrayList<>();
 
         String sql = "SELECT r.id_reservation, r.id_client, " +
-            "(r.nb_passager - COALESCE(pa.nb_assigne, 0)) AS nb_passager_restant, " +
-            "r.date_heure_arrivee, r.id_hotel, h.nom as nom_hotel " +
-            "FROM Reservation r " +
-            "LEFT JOIN Hotel h ON r.id_hotel = h.id_hotel " +
-            "LEFT JOIN (" +
-            "   SELECT p.id_reservation, SUM(COALESCE(p.nb_passager_assigne, r2.nb_passager)) as nb_assigne " +
-            "   FROM Planification p " +
-            "   JOIN Reservation r2 ON r2.id_reservation = p.id_reservation " +
-            "   GROUP BY p.id_reservation" +
-            ") pa ON pa.id_reservation = r.id_reservation " +
-            "WHERE (r.nb_passager - COALESCE(pa.nb_assigne, 0)) > 0 " +
+                "(r.nb_passager - COALESCE(pa.nb_assigne, 0)) AS nb_passager_restant, " +
+                "r.date_heure_arrivee, r.id_hotel, h.nom as nom_hotel " +
+                "FROM Reservation r " +
+                "LEFT JOIN Hotel h ON r.id_hotel = h.id_hotel " +
+                "LEFT JOIN (" +
+                "   SELECT p.id_reservation, SUM(COALESCE(p.nb_passager_assigne, r2.nb_passager)) as nb_assigne " +
+                "   FROM Planification p " +
+                "   JOIN Reservation r2 ON r2.id_reservation = p.id_reservation " +
+                "   GROUP BY p.id_reservation" +
+                ") pa ON pa.id_reservation = r.id_reservation " +
+                "WHERE (r.nb_passager - COALESCE(pa.nb_assigne, 0)) > 0 " +
                 "ORDER BY r.date_heure_arrivee";
 
         try (Connection conn = DatabaseConnection.getConnection();
@@ -497,10 +498,12 @@ public class PlanificationService {
     private static class GroupAssignment {
         private final Reservation reservation;
         private final int idVehicule;
+        private final int nbPassagersAssignes;
 
-        GroupAssignment(Reservation reservation, int idVehicule) {
+        GroupAssignment(Reservation reservation, int idVehicule, int nbPassagersAssignes) {
             this.reservation = reservation;
             this.idVehicule = idVehicule;
+            this.nbPassagersAssignes = nbPassagersAssignes;
         }
     }
 
@@ -920,6 +923,7 @@ public class PlanificationService {
                             retourInitial,
                             vehiculesUtilises,
                             groupe.subList(i + 1, groupe.size()));
+                    Vehicule nouveauVehicule = meilleurNouveauVehicule;
 
                     boolean peutAssignerBin = bestBinIdx >= 0;
                     boolean peutOuvrirNouveau = meilleurNouveauVehicule != null;
@@ -931,32 +935,25 @@ public class PlanificationService {
                     if (peutAssignerBin && !peutOuvrirNouveau) {
                         VehiculeBin bin = bins.get(bestBinIdx);
                         int passagersAffectes = Math.min(passagersRestants, bin.placesRestantes);
-                        assignerSurBinExistant(reservation, depart, retourInitial, bin, passagersAffectes, context);
+                        GroupAssignment assignation = assignerSurBinExistant(reservation, bin, passagersAffectes);
+                        assignations.add(assignation);
                         passagersRestants -= passagersAffectes;
                         continue;
                     }
 
                     if (!peutAssignerBin) {
-                        Vehicule nouveauVehicule = meilleurNouveauVehicule;
                         if (nouveauVehicule == null) {
                             break;
                         }
                         int passagersAffectes = Math.min(passagersRestants, nouveauVehicule.getPlace());
-                        assignerSurNouveauVehicule(reservation, depart, retourInitial, context, vehiculesUtilises, bins,
-                            nouveauVehicule, passagersAffectes);
+                        GroupAssignment assignation = assignerSurNouveauVehicule(reservation, vehiculesUtilises,
+                                bins, nouveauVehicule, passagersAffectes);
+                        assignations.add(assignation);
                         passagersRestants -= passagersAffectes;
                         continue;
                     }
 
                     VehiculeBin binCandidat = bins.get(bestBinIdx);
-                        Vehicule nouveauVehicule = meilleurNouveauVehicule;
-                        if (nouveauVehicule == null) {
-                        int passagersAffectes = Math.min(passagersRestants, binCandidat.placesRestantes);
-                        assignerSurBinExistant(reservation, depart, retourInitial, binCandidat, passagersAffectes,
-                            context);
-                        passagersRestants -= passagersAffectes;
-                        continue;
-                        }
                     boolean prendreNouveau = doitPrendreNouveauVehicule(
                             binCandidat,
                             nouveauVehicule,
@@ -964,16 +961,23 @@ public class PlanificationService {
 
                     if (prendreNouveau) {
                         int passagersAffectes = Math.min(passagersRestants, nouveauVehicule.getPlace());
-                        assignerSurNouveauVehicule(reservation, depart, retourInitial, context, vehiculesUtilises, bins,
-                            nouveauVehicule, passagersAffectes);
+                        GroupAssignment assignation = assignerSurNouveauVehicule(reservation, vehiculesUtilises,
+                                bins, nouveauVehicule, passagersAffectes);
+                        assignations.add(assignation);
                         passagersRestants -= passagersAffectes;
                     } else {
                         int passagersAffectes = Math.min(passagersRestants, binCandidat.placesRestantes);
-                        assignerSurBinExistant(reservation, depart, retourInitial, binCandidat, passagersAffectes,
-                                context);
+                        GroupAssignment assignation = assignerSurBinExistant(reservation, binCandidat,
+                                passagersAffectes);
+                        assignations.add(assignation);
                         passagersRestants -= passagersAffectes;
                     }
-                    }
+                }
+
+                if (passagersRestants > 0) {
+                    Reservation restante = copierReservationAvecNbPassagers(reservation, passagersRestants);
+                    restante.setDate_heure_depart_groupe(depart);
+                    reservationsNonAssignees.add(restante);
                 }
 
             } catch (Exception e) {
@@ -990,7 +994,7 @@ public class PlanificationService {
 
     private List<VehiculeBin> chargerBinsExistants(Timestamp depart, List<Integer> vehiculesUtilises) {
         List<VehiculeBin> bins = new ArrayList<>();
-        String sql = "SELECT p.id_vehicule, v.place, v.type_carburant, COALESCE(SUM(r.nb_passager),0) as places_prises "
+        String sql = "SELECT p.id_vehicule, v.place, v.type_carburant, COALESCE(SUM(COALESCE(p.nb_passager_assigne, r.nb_passager)),0) as places_prises "
                 +
                 "FROM Planification p " +
                 "JOIN Vehicule v ON v.id = p.id_vehicule " +
@@ -1036,21 +1040,23 @@ public class PlanificationService {
     }
 
     private GroupAssignment assignerSurBinExistant(Reservation reservation,
-            VehiculeBin bin) {
-        bin.placesRestantes -= reservation.getNb_passager();
-        return new GroupAssignment(reservation, bin.idVehicule);
+            VehiculeBin bin,
+            int nbPassagersAffectes) {
+        bin.placesRestantes -= nbPassagersAffectes;
+        return new GroupAssignment(reservation, bin.idVehicule, nbPassagersAffectes);
     }
 
     private GroupAssignment assignerSurNouveauVehicule(Reservation reservation,
             List<Integer> vehiculesUtilises,
             List<VehiculeBin> bins,
-            Vehicule vehicule) {
+            Vehicule vehicule,
+            int nbPassagersAffectes) {
         vehiculesUtilises.add(vehicule.getId());
         bins.add(new VehiculeBin(
                 vehicule.getId(),
-                vehicule.getPlace() - reservation.getNb_passager(),
+                vehicule.getPlace() - nbPassagersAffectes,
                 vehicule.getTypeCarburant()));
-        return new GroupAssignment(reservation, vehicule.getId());
+        return new GroupAssignment(reservation, vehicule.getId(), nbPassagersAffectes);
     }
 
     private void persisterPlanificationsGroupe(List<GroupAssignment> assignations,
@@ -1061,9 +1067,9 @@ public class PlanificationService {
         }
 
         Map<Integer, Timestamp> retourByVehicule = calculerRetoursParVehicule(assignations, departGroupe, context);
-        String sql = "INSERT INTO Planification (id_reservation, id_vehicule, date_heure_depart_aeroport, date_heure_retour_aeroport) "
+        String sql = "INSERT INTO Planification (id_reservation, id_vehicule, date_heure_depart_aeroport, date_heure_retour_aeroport, nb_passager_assigne) "
                 +
-                "VALUES (?, ?, ?, ?)";
+                "VALUES (?, ?, ?, ?, ?)";
 
         Set<Integer> vehiculesARecalculer = new HashSet<>();
         try (Connection conn = DatabaseConnection.getConnection();
@@ -1081,6 +1087,7 @@ public class PlanificationService {
                     stmt.setInt(2, assignation.idVehicule);
                     stmt.setTimestamp(3, departGroupe);
                     stmt.setTimestamp(4, retour);
+                    stmt.setInt(5, assignation.nbPassagersAssignes);
                     stmt.addBatch();
                     vehiculesARecalculer.add(assignation.idVehicule);
                 }
@@ -1156,11 +1163,11 @@ public class PlanificationService {
         ids.add(nouveauVehicule.getId());
         Map<Integer, Integer> nbTrajetsByVehicule = chargerNombreTrajetsParVehicule(ids);
         int passagersComparaison = Math.min(passagersRestants,
-            Math.min(binCandidat.placesRestantes, nouveauVehicule.getPlace()));
+                Math.min(binCandidat.placesRestantes, nouveauVehicule.getPlace()));
         int comparaison = comparerVehiculesSprint6(
                 nouveauVehicule,
                 vehiculeVirtuelBin,
-            passagersComparaison,
+                passagersComparaison,
                 nbTrajetsByVehicule);
         return comparaison < 0;
     }
