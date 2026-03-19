@@ -468,6 +468,16 @@ public class PlanificationService {
         }
     }
 
+    private static class GroupAssignment {
+        private final Reservation reservation;
+        private final int idVehicule;
+
+        GroupAssignment(Reservation reservation, int idVehicule) {
+            this.reservation = reservation;
+            this.idVehicule = idVehicule;
+        }
+    }
+
     /**
      * Recalcule la date_heure_retour_aeroport pour toutes les planifications d'un
      * même véhicule partant au même instant.
@@ -586,17 +596,26 @@ public class PlanificationService {
 
             try {
                 Timestamp retourInitial = calculerRetourPourGroupe(depart, groupe, context);
-                traiterGroupe(depart, retourInitial, groupe, context, reservationsNonAssignees);
+                List<GroupAssignment> assignations = traiterGroupe(
+                        depart,
+                        retourInitial,
+                        groupe,
+                        reservationsNonAssignees);
+
+                Timestamp departGroupeAssigne = calculerDepartGroupeSelonAssignations(assignations, depart);
+                persisterPlanificationsGroupe(assignations, departGroupeAssigne, context);
+
+                for (Reservation reservation : groupe) {
+                    departGroupeByReservation.put(reservation.getId_reservation(), departGroupeAssigne);
+                }
             } catch (Exception e) {
                 int refId = groupe.isEmpty() ? -1 : groupe.get(0).getId_reservation();
                 System.err.println("Erreur de planification du groupe (réservation " + refId + "): " + e.getMessage());
                 reservationsNonAssignees.addAll(groupe);
-            }
 
-            Timestamp departGroupeAssigne = calculerDepartGroupeSelonAssignations(groupe, reservationsNonAssignees,
-                    depart);
-            for (Reservation reservation : groupe) {
-                departGroupeByReservation.put(reservation.getId_reservation(), departGroupeAssigne);
+                for (Reservation reservation : groupe) {
+                    departGroupeByReservation.put(reservation.getId_reservation(), depart);
+                }
             }
         }
 
@@ -617,7 +636,8 @@ public class PlanificationService {
         return result;
     }
 
-    private List<Planification> filtrerPlanificationsParDepart(List<Planification> planifications, long departFiltreMillis) {
+    private List<Planification> filtrerPlanificationsParDepart(List<Planification> planifications,
+            long departFiltreMillis) {
         List<Planification> filtrees = new ArrayList<>();
         for (Planification planification : planifications) {
             Timestamp depart = planification.getDateHeureDepartAeroport();
@@ -628,7 +648,8 @@ public class PlanificationService {
         return filtrees;
     }
 
-    private List<Reservation> filtrerReservationsNonAssigneesParDepart(List<Reservation> reservations, long departFiltreMillis) {
+    private List<Reservation> filtrerReservationsNonAssigneesParDepart(List<Reservation> reservations,
+            long departFiltreMillis) {
         List<Reservation> filtrees = new ArrayList<>();
         for (Reservation reservation : reservations) {
             Timestamp depart = reservation.getDate_heure_depart_groupe();
@@ -645,16 +666,6 @@ public class PlanificationService {
         List<AssignOrderItem> items = new ArrayList<>();
 
         for (Planification planification : planifications) {
-            Timestamp departGroupe = departGroupeByReservation.get(planification.getIdReservation());
-            if (departGroupe != null && planification.getDateHeureDepartAeroport() != null) {
-            long deltaMillis = departGroupe.getTime() - planification.getDateHeureDepartAeroport().getTime();
-            planification.setDateHeureDepartAeroport(departGroupe);
-            if (planification.getDateHeureRetourAeroport() != null) {
-                planification.setDateHeureRetourAeroport(
-                    new Timestamp(planification.getDateHeureRetourAeroport().getTime() + deltaMillis));
-            }
-            }
-
             long departMillis = planification.getDateHeureDepartAeroport() != null
                     ? planification.getDateHeureDepartAeroport().getTime()
                     : 0;
@@ -838,11 +849,11 @@ public class PlanificationService {
         return new Timestamp(depart.getTime() + metrics.totalDurationMillis);
     }
 
-    private void traiterGroupe(Timestamp depart,
+    private List<GroupAssignment> traiterGroupe(Timestamp depart,
             Timestamp retourInitial,
             List<Reservation> groupe,
-            AutoPlanContext context,
             List<Reservation> reservationsNonAssignees) throws SQLException {
+        List<GroupAssignment> assignations = new ArrayList<>();
         groupe.sort((a, b) -> Integer.compare(b.getNb_passager(), a.getNb_passager()));
 
         List<Integer> vehiculesUtilises = new ArrayList<>();
@@ -868,13 +879,13 @@ public class PlanificationService {
                 }
 
                 if (peutAssignerBin && !peutOuvrirNouveau) {
-                    assignerSurBinExistant(reservation, depart, retourInitial, bins.get(bestBinIdx), context);
+                    assignations.add(assignerSurBinExistant(reservation, bins.get(bestBinIdx)));
                     continue;
                 }
 
                 if (!peutAssignerBin) {
-                    assignerSurNouveauVehicule(reservation, depart, retourInitial, context, vehiculesUtilises, bins,
-                            meilleurNouveauVehicule);
+                    assignations.add(assignerSurNouveauVehicule(reservation, vehiculesUtilises, bins,
+                            meilleurNouveauVehicule));
                     continue;
                 }
 
@@ -885,10 +896,10 @@ public class PlanificationService {
                         reservation.getNb_passager());
 
                 if (prendreNouveau) {
-                    assignerSurNouveauVehicule(reservation, depart, retourInitial, context, vehiculesUtilises, bins,
-                            meilleurNouveauVehicule);
+                    assignations.add(assignerSurNouveauVehicule(reservation, vehiculesUtilises, bins,
+                            meilleurNouveauVehicule));
                 } else {
-                    assignerSurBinExistant(reservation, depart, retourInitial, binCandidat, context);
+                    assignations.add(assignerSurBinExistant(reservation, binCandidat));
                 }
             } catch (Exception e) {
                 System.err.println("Erreur planification auto pour réservation "
@@ -896,16 +907,19 @@ public class PlanificationService {
                 reservationsNonAssignees.add(reservation);
             }
         }
+
+        return assignations;
     }
 
     private List<VehiculeBin> chargerBinsExistants(Timestamp depart, List<Integer> vehiculesUtilises) {
         List<VehiculeBin> bins = new ArrayList<>();
-        String sql = "SELECT p.id_vehicule, v.place, v.type_carburant, COALESCE(SUM(r.nb_passager),0) as places_prises " +
+        String sql = "SELECT p.id_vehicule, v.place, v.type_carburant, COALESCE(SUM(r.nb_passager),0) as places_prises "
+                +
                 "FROM Planification p " +
                 "JOIN Vehicule v ON v.id = p.id_vehicule " +
                 "JOIN Reservation r ON r.id_reservation = p.id_reservation " +
                 "WHERE p.date_heure_depart_aeroport = ? " +
-            "GROUP BY p.id_vehicule, v.place, v.type_carburant";
+                "GROUP BY p.id_vehicule, v.place, v.type_carburant";
 
         try (Connection conn = DatabaseConnection.getConnection();
                 PreparedStatement stmt = conn.prepareStatement(sql)) {
@@ -939,30 +953,91 @@ public class PlanificationService {
         return bestIdx;
     }
 
-    private void assignerSurBinExistant(Reservation reservation,
-            Timestamp depart,
-            Timestamp retourInitial,
-            VehiculeBin bin,
-            AutoPlanContext context) throws SQLException {
+    private GroupAssignment assignerSurBinExistant(Reservation reservation,
+            VehiculeBin bin) {
         bin.placesRestantes -= reservation.getNb_passager();
-        planifier(reservation.getId_reservation(), bin.idVehicule, depart, retourInitial);
-        recalculerRetourVehicule(bin.idVehicule, depart, context);
+        return new GroupAssignment(reservation, bin.idVehicule);
     }
 
-    private void assignerSurNouveauVehicule(Reservation reservation,
-            Timestamp depart,
-            Timestamp retourInitial,
-            AutoPlanContext context,
+    private GroupAssignment assignerSurNouveauVehicule(Reservation reservation,
             List<Integer> vehiculesUtilises,
             List<VehiculeBin> bins,
-            Vehicule vehicule) throws SQLException {
+            Vehicule vehicule) {
         vehiculesUtilises.add(vehicule.getId());
         bins.add(new VehiculeBin(
                 vehicule.getId(),
                 vehicule.getPlace() - reservation.getNb_passager(),
                 vehicule.getTypeCarburant()));
-        planifier(reservation.getId_reservation(), vehicule.getId(), depart, retourInitial);
-        recalculerRetourVehicule(vehicule.getId(), depart, context);
+        return new GroupAssignment(reservation, vehicule.getId());
+    }
+
+    private void persisterPlanificationsGroupe(List<GroupAssignment> assignations,
+            Timestamp departGroupe,
+            AutoPlanContext context) throws SQLException {
+        if (assignations.isEmpty()) {
+            return;
+        }
+
+        Map<Integer, Timestamp> retourByVehicule = calculerRetoursParVehicule(assignations, departGroupe, context);
+        String sql = "INSERT INTO Planification (id_reservation, id_vehicule, date_heure_depart_aeroport, date_heure_retour_aeroport) "
+                +
+                "VALUES (?, ?, ?, ?)";
+
+        Set<Integer> vehiculesARecalculer = new HashSet<>();
+        try (Connection conn = DatabaseConnection.getConnection();
+                PreparedStatement stmt = conn.prepareStatement(sql)) {
+            boolean previousAutoCommit = conn.getAutoCommit();
+            conn.setAutoCommit(false);
+            try {
+                for (GroupAssignment assignation : assignations) {
+                    Timestamp retour = retourByVehicule.get(assignation.idVehicule);
+                    if (retour == null) {
+                        throw new SQLException("Retour introuvable pour le véhicule " + assignation.idVehicule);
+                    }
+
+                    stmt.setInt(1, assignation.reservation.getId_reservation());
+                    stmt.setInt(2, assignation.idVehicule);
+                    stmt.setTimestamp(3, departGroupe);
+                    stmt.setTimestamp(4, retour);
+                    stmt.addBatch();
+                    vehiculesARecalculer.add(assignation.idVehicule);
+                }
+
+                stmt.executeBatch();
+                conn.commit();
+            } catch (SQLException e) {
+                conn.rollback();
+                throw e;
+            } finally {
+                conn.setAutoCommit(previousAutoCommit);
+            }
+        }
+
+        for (Integer idVehicule : vehiculesARecalculer) {
+            recalculerRetourVehicule(idVehicule, departGroupe, context);
+        }
+    }
+
+    private Map<Integer, Timestamp> calculerRetoursParVehicule(List<GroupAssignment> assignations,
+            Timestamp depart,
+            AutoPlanContext context) throws SQLException {
+        Map<Integer, List<Integer>> hotelsByVehicule = new HashMap<>();
+        for (GroupAssignment assignation : assignations) {
+            List<Integer> hotels = hotelsByVehicule.computeIfAbsent(assignation.idVehicule, k -> new ArrayList<>());
+            int idHotel = assignation.reservation.getId_hotel();
+            if (!hotels.contains(idHotel)) {
+                hotels.add(idHotel);
+            }
+        }
+
+        Map<Integer, Timestamp> retourByVehicule = new HashMap<>();
+        for (Map.Entry<Integer, List<Integer>> entry : hotelsByVehicule.entrySet()) {
+            List<Integer> hotelsTries = trierHotelsParDistanceAeroport(entry.getValue(), context);
+            RouteMetrics metrics = calculerRouteDepuisHotels(hotelsTries, context);
+            retourByVehicule.put(entry.getKey(), new Timestamp(depart.getTime() + metrics.totalDurationMillis));
+        }
+
+        return retourByVehicule;
     }
 
     private boolean doitPrendreNouveauVehicule(VehiculeBin binCandidat,
@@ -1022,21 +1097,11 @@ public class PlanificationService {
         return meilleurVehicule;
     }
 
-    private Timestamp calculerDepartGroupeSelonAssignations(List<Reservation> groupe,
-            List<Reservation> reservationsNonAssignees,
+    private Timestamp calculerDepartGroupeSelonAssignations(List<GroupAssignment> assignations,
             Timestamp fallback) {
-        Set<Integer> nonAssigneesIds = new HashSet<>();
-        for (Reservation reservation : reservationsNonAssignees) {
-            nonAssigneesIds.add(reservation.getId_reservation());
-        }
-
         Timestamp maxArriveeAssignee = null;
-        for (Reservation reservation : groupe) {
-            if (nonAssigneesIds.contains(reservation.getId_reservation())) {
-                continue;
-            }
-
-            Timestamp arrivee = reservation.getDate_heure_arrivee();
+        for (GroupAssignment assignation : assignations) {
+            Timestamp arrivee = assignation.reservation.getDate_heure_arrivee();
             if (arrivee != null && (maxArriveeAssignee == null || arrivee.after(maxArriveeAssignee))) {
                 maxArriveeAssignee = arrivee;
             }
