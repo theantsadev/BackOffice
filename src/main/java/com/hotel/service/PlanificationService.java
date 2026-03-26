@@ -72,8 +72,6 @@ public class PlanificationService {
         return null;
     }
 
-    
-
     public List<Planification> getPlanificationsByDate(java.util.Date date) throws SQLException {
         List<Planification> planifications = new ArrayList<>();
 
@@ -159,34 +157,57 @@ public class PlanificationService {
         }
     }
 
-    
-
     public Map<String, Object> planifierAutoParDate(java.util.Date date) throws SQLException {
         return planifierAutoParDate(date, null);
     }
 
     public Map<String, Object> planifierAutoParDate(java.util.Date date, Timestamp departGroupeFiltre)
             throws SQLException {
+        // Construction du contexte de planification automatique (paramètres, hôtel,
+        // etc.)
         PlanificationContext context = buildAutoPlanContext();
+
+        // Recupération des réservations pour la date donnée
         List<Reservation> reservations = reservationService.getReservationByDate(date);
+
+        // Filtrage des réservations déjà partiellement ou totalement assignées
         List<Reservation> aTraiter = filtrerReservationsNonAssignees(reservations);
+
+        // Formation de groupes de réservations selon la fenêtre d'attente définie dans
+        // le contexte
         LinkedHashMap<Long, List<Reservation>> groupes = groupeAssignationService
                 .construireGroupesParFenetreAttente(aTraiter, context.getAttenteMillis());
 
+        // Initialisation d'une liste pour stocker les réservations qui n'ont pas pu
+        // être assignées
         List<Reservation> reservationsNonAssignees = new ArrayList<>();
+
         for (Map.Entry<Long, List<Reservation>> entry : groupes.entrySet()) {
+
+            // Date d'arrivée de la derniere reservation du groupe, qui servira de date de
+            // départ estimée pour la planification du groupe
             Timestamp depart = new Timestamp(entry.getKey());
+
+            // Récupération des reservations du groupe
             List<Reservation> groupe = new ArrayList<>(entry.getValue());
+
+            // On traite les reservations non assignées du groupe précédent en les ajoutant
+            // au groupe actuel pour tenter de les assigner avant de les reconsidérer comme
+            // non assignées
             groupe.addAll(reservationsNonAssignees);
             reservationsNonAssignees.clear();
 
             try {
                 Timestamp retourInitial = routeCalculationService.calculerRetourPourGroupe(depart, groupe, context);
+
                 List<GroupAssignment> assignations = groupeAssignationService.traiterGroupe(
                         depart,
                         retourInitial,
+                        context.getAttenteMillis(),
                         groupe,
                         reservationsNonAssignees);
+
+                logAssignationsAvantPersistance(depart, retourInitial, assignations, reservationsNonAssignees);
 
                 Timestamp departGroupeAssigne = groupeAssignationService
                         .calculerDepartGroupeSelonAssignations(assignations, depart);
@@ -199,6 +220,7 @@ public class PlanificationService {
         }
 
         List<Planification> planifications = getPlanificationsByDate(date);
+        logEtatAvantOrdresAssignation(planifications, reservationsNonAssignees);
         groupeAssignationService.appliquerOrdresAssignation(planifications, reservationsNonAssignees);
 
         if (departGroupeFiltre != null) {
@@ -213,6 +235,67 @@ public class PlanificationService {
         result.put("reservationsNonAssignees", reservationsNonAssignees);
         result.put("tempsAttenteMin", (long) (context.getAttenteMillis() / (60 * 1000)));
         return result;
+    }
+
+    private void logAssignationsAvantPersistance(Timestamp depart,
+            Timestamp retourInitial,
+            List<GroupAssignment> assignations,
+            List<Reservation> reservationsNonAssignees) {
+        System.out.println("[DEBUG][PLANIF] ----- Resultat traiterGroupe avant persistance -----");
+        System.out.println("[DEBUG][PLANIF] departGroupe=" + depart
+                + " | retourInitial=" + retourInitial
+                + " | nbAssignations=" + assignations.size()
+                + " | nbNonAssigneesEnMemoire=" + reservationsNonAssignees.size());
+
+        if (assignations.isEmpty()) {
+            System.out.println("[DEBUG][PLANIF] assignations: aucune");
+        } else {
+            for (GroupAssignment assignation : assignations) {
+                Reservation reservation = assignation.getReservation();
+                System.out.println("[DEBUG][PLANIF] ASSIGNATION"
+                        + " | resa=" + reservation.getId_reservation()
+                        + " | client=" + reservation.getId_client()
+                        + " | hotel=" + reservation.getId_hotel()
+                        + " | paxAssignes=" + assignation.getNbPassagersAssignes()
+                        + " | vehicule=" + assignation.getIdVehicule()
+                        + " | departEffectif=" + assignation.getDateDepart());
+            }
+        }
+
+        if (!reservationsNonAssignees.isEmpty()) {
+            for (Reservation nonAssignee : reservationsNonAssignees) {
+                System.out.println("[DEBUG][PLANIF] NON_ASSIGNEE"
+                        + " | resa=" + nonAssignee.getId_reservation()
+                        + " | client=" + nonAssignee.getId_client()
+                        + " | hotel=" + nonAssignee.getId_hotel()
+                        + " | paxRestants=" + nonAssignee.getNb_passager()
+                        + " | departGroupe=" + nonAssignee.getDate_heure_depart_groupe());
+            }
+        }
+    }
+
+    private void logEtatAvantOrdresAssignation(List<Planification> planifications,
+            List<Reservation> reservationsNonAssignees) {
+        System.out.println("[DEBUG][PLANIF] ----- Etat avant appliquerOrdresAssignation -----");
+        System.out.println("[DEBUG][PLANIF] nbPlanifications=" + planifications.size()
+                + " | nbReservationsNonAssignees=" + reservationsNonAssignees.size());
+
+        for (Planification planification : planifications) {
+            System.out.println("[DEBUG][PLANIF] PLANIF"
+                    + " | planif=" + planification.getIdPlanification()
+                    + " | resa=" + planification.getIdReservation()
+                    + " | vehicule=" + planification.getIdVehicule()
+                    + " | depart=" + planification.getDateHeureDepartAeroport()
+                    + " | retour=" + planification.getDateHeureRetourAeroport()
+                    + " | pax=" + planification.getNbPassager());
+        }
+
+        for (Reservation nonAssignee : reservationsNonAssignees) {
+            System.out.println("[DEBUG][PLANIF] NON_ASSIGNEE_AVANT_ORDRE"
+                    + " | resa=" + nonAssignee.getId_reservation()
+                    + " | departGroupe=" + nonAssignee.getDate_heure_depart_groupe()
+                    + " | pax=" + nonAssignee.getNb_passager());
+        }
     }
 
     private List<Planification> filtrerPlanificationsParDepart(List<Planification> planifications,
@@ -239,6 +322,10 @@ public class PlanificationService {
         return filtrees;
     }
 
+    /*
+     * Construit un contexte de planification automatique (paramètres, hôtel, etc.)
+     * pour être utilisé dans les différentes étapes de la planification
+     */
     private PlanificationContext buildAutoPlanContext() throws SQLException {
         double vitesseKmh = parametreService.getValeurByCle("vitesse_moyenne_kmh", 30.0);
         double tempsAttenteMin = parametreService.getValeurByCle("temps_attente_min", 30.0);
@@ -247,9 +334,13 @@ public class PlanificationService {
         return new PlanificationContext(vitesseKmh, attenteMillis, aeroport);
     }
 
+    /*
+     * Filtre les réservations non assignées en fonction des passagers déjà assignés
+     */
     private List<Reservation> filtrerReservationsNonAssignees(List<Reservation> reservations) throws SQLException {
         List<Reservation> aTraiter = new ArrayList<>();
         Map<Integer, Integer> passagersAssignes = chargerPassagersAssignesParReservation(reservations);
+        System.out.println(passagersAssignes.size() + " reservations ont des passagers déjà assignés");
         for (Reservation reservation : reservations) {
             int dejaAssigne = passagersAssignes.getOrDefault(reservation.getId_reservation(), 0);
             int passagersRestants = reservation.getNb_passager() - dejaAssigne;

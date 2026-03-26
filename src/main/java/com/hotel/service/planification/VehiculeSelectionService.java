@@ -18,6 +18,7 @@ import com.hotel.model.Vehicule;
 
 public class VehiculeSelectionService {
 
+    private static final long DELAI_ATTENTE_RETOUR_MILLIS = 30L * 60 * 1000;
     private final int sprint6TieBreakerSeed;
 
     public VehiculeSelectionService() {
@@ -441,11 +442,27 @@ public class VehiculeSelectionService {
 
         // 1. Essayer de trouver un véhicule disponible immédiatement
         Vehicule vehiculeImmediat = trouverVehiculeBestFit(nbPax, dateDepart, retour, vehiculesExclus);
+
+        // 2. Vérifier si un véhicule en retour proche est un meilleur choix.
+        VehiculeRetour vehiculeEnRetour = trouverVehiculeEnRetour(
+                nbPax,
+                dateDepart,
+                DELAI_ATTENTE_RETOUR_MILLIS,
+                vehiculesExclus);
+
+        if (vehiculeEnRetourEstMeilleur(vehiculeImmediat, vehiculeEnRetour, nbPax, dateDepart)) {
+            return vehiculeEnRetour;
+        }
+
         if (vehiculeImmediat != null) {
             return new VehiculeRetour(vehiculeImmediat, dateDepart);
         }
 
-        // 2. Sinon, trouver la prochaine heure de disponibilité
+        if (vehiculeEnRetour != null) {
+            return vehiculeEnRetour;
+        }
+
+        // 3. Sinon, trouver la prochaine heure de disponibilité
         // Note: on passe 0 pour nbPaxMin car on gère la scission dans
         // trouverVehiculeBestFit
         Timestamp prochaineDispo = trouverProchaineDisponibilite(dateDepart, 0, vehiculesExclus);
@@ -453,11 +470,11 @@ public class VehiculeSelectionService {
             return null; // Aucun véhicule disponible
         }
 
-        // 3. Calculer le nouveau retour basé sur la prochaine dispo
+        // 4. Calculer le nouveau retour basé sur la prochaine dispo
         long dureeTrajet = retour.getTime() - dateDepart.getTime();
         Timestamp nouveauRetour = new Timestamp(prochaineDispo.getTime() + dureeTrajet);
 
-        // 4. Trouver le meilleur véhicule à cette nouvelle heure
+        // 5. Trouver le meilleur véhicule à cette nouvelle heure
         Vehicule vehicule = trouverVehiculeBestFit(nbPax, prochaineDispo, nouveauRetour, vehiculesExclus);
         if (vehicule != null) {
             return new VehiculeRetour(vehicule, prochaineDispo);
@@ -712,9 +729,20 @@ public class VehiculeSelectionService {
             return true;
         }
 
+        // Si l'option immédiate implique une scission mais que le véhicule en retour
+        // peut prendre tous les passagers, on préfère attendre un peu.
+        boolean disponiblePeutToutPrendre = vehiculeDisponible.getPlace() >= nbPassagers;
+        boolean retourPeutToutPrendre = vehiculeEnRetour.getVehicule().getPlace() >= nbPassagers;
+        if (!disponiblePeutToutPrendre && retourPeutToutPrendre) {
+            return true;
+        }
+        if (disponiblePeutToutPrendre && !retourPeutToutPrendre) {
+            return false;
+        }
+
         // Calcul du gaspillage pour chaque option
-        int gaspillageDispo = vehiculeDisponible.getPlace() - nbPassagers;
-        int gaspillageRetour = vehiculeEnRetour.getVehicule().getPlace() - nbPassagers;
+        int gaspillageDispo = Math.max(0, vehiculeDisponible.getPlace() - nbPassagers);
+        int gaspillageRetour = Math.max(0, vehiculeEnRetour.getVehicule().getPlace() - nbPassagers);
 
         // Critère principal : gaspillage minimal
         if (gaspillageRetour < gaspillageDispo) {

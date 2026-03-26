@@ -489,8 +489,7 @@
         const date = urlParams.get('date') || new Date().toISOString().split('T')[0];
         
         document.getElementById('selectedDate').textContent = date;
-        
-        const token = localStorage.getItem('api_token') || sessionStorage.getItem('api_token') || '';
+
         let allDepartGroupsCache = [];
 
         function formatFr(dateLike) {
@@ -583,13 +582,6 @@
             const trajetsTableBody = document.getElementById('trajetsTableBody');
             const searchInput = document.getElementById('searchInput');
             const groupFilter = document.getElementById('groupFilter');
-            
-            if (!token || token.trim() === '') {
-                loadingDiv.style.display = 'none';
-                errorDiv.innerHTML = '<i class="fas fa-exclamation-triangle me-2"></i>Token manquant. <a href="${pageContext.request.contextPath}/pages/gestion-tokens">Generez un token</a> puis rechargez la page.';
-                errorDiv.style.display = 'block';
-                return;
-            }
 
             loadingDiv.style.display = 'block';
             errorDiv.style.display = 'none';
@@ -888,6 +880,11 @@
                     }
 
                 }, function(code, message) {
+                    if (code === 403) {
+                        clearStoredToken();
+                        loadPlanifications();
+                        return;
+                    }
                     errorDiv.textContent = message;
                     errorDiv.style.display = 'block';
                 });

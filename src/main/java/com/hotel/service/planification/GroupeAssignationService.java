@@ -34,6 +34,13 @@ public class GroupeAssignationService {
         this.routeCalculationService = routeCalculationService;
     }
 
+    /**
+     * Construit des groupes de réservations en fonction d'une fenêtre d'attente
+     *
+     * @param reservationsTriees Liste des réservations triées
+     * @param attenteMillis      Durée de la fenêtre d'attente en millisecondes
+     * @return Map contenant les groupes de réservations
+     */
     public LinkedHashMap<Long, List<Reservation>> construireGroupesParFenetreAttente(
             List<Reservation> reservationsTriees,
             long attenteMillis) {
@@ -76,19 +83,21 @@ public class GroupeAssignationService {
      * 1. TRIER les réservations par nb_passagers DÉCROISSANT
      *
      * 2. TANT QUE il reste des réservations non assignées :
-     *    a) Prendre la PREMIÈRE résa (la plus grosse)
-     *    b) Trouver le véhicule Best-Fit (place >= nb_pax, gaspillage minimal)
-     *       - Si aucun véhicule assez grand → prendre le plus grand (scission)
-     *       - Si véhicule en retour est meilleur → ajuster date départ
-     *    c) REMPLIR CE VÉHICULE avant d'en ouvrir un autre :
-     *       - Chercher dans les résas restantes celle qui minimize |nb_pax - places_restantes|
-     *       - Répéter jusqu'à véhicule plein ou aucune résa ne rentre
-     *    d) Si aucun véhicule dispo → reporter au prochain groupe
+     * a) Prendre la PREMIÈRE résa (la plus grosse)
+     * b) Trouver le véhicule Best-Fit (place >= nb_pax, gaspillage minimal)
+     * - Si aucun véhicule assez grand → prendre le plus grand (scission)
+     * - Si véhicule en retour est meilleur → ajuster date départ
+     * c) REMPLIR CE VÉHICULE avant d'en ouvrir un autre :
+     * - Chercher dans les résas restantes celle qui minimize |nb_pax -
+     * places_restantes|
+     * - Répéter jusqu'à véhicule plein ou aucune résa ne rentre
+     * d) Si aucun véhicule dispo → reporter au prochain groupe
      *
      * 3. Les résas non assignées sont reportées au prochain groupe d'attente
      */
     public List<GroupAssignment> traiterGroupe(Timestamp depart,
             Timestamp retourInitial,
+            long attenteMaxMillis,
             List<Reservation> groupe,
             List<Reservation> reservationsNonAssignees) throws SQLException {
 
@@ -118,13 +127,14 @@ public class GroupeAssignationService {
         // ÉTAPE 2 : Traiter les réservations
         // ============================================================
         while (!resasRestantes.isEmpty()) {
-            // Prendre la première résa (tri DESC, donc la plus grosse)
+            trierResasRestantesParPaxDesc(resasRestantes);
+
+            // ----------------------------------------------------
+            // 2a : Ouvrir un bin depuis la plus grosse résa restante
+            // ----------------------------------------------------
             ReservationRestante premiereResa = resasRestantes.get(0);
             int nbPaxPremiere = premiereResa.passagersRestants;
 
-            // ----------------------------------------------------
-            // 2a : Chercher le meilleur véhicule Best-Fit
-            // ----------------------------------------------------
             VehiculeRetour vehiculeTrouve = vehiculeSelectionService.trouverVehiculeBestFitAvecAttente(
                     nbPaxPremiere,
                     departEffectif,
@@ -133,27 +143,40 @@ public class GroupeAssignationService {
 
             // Si aucun véhicule disponible → reporter toutes les résas restantes
             if (vehiculeTrouve == null) {
-                for (ReservationRestante rr : resasRestantes) {
-                    if (rr.passagersRestants > 0) {
-                        Reservation restante = copierReservationAvecNbPassagers(rr.reservation, rr.passagersRestants);
-                        restante.setDate_heure_depart_groupe(departEffectif);
-                        reservationsNonAssignees.add(restante);
-                    }
-                }
+                reporterReservationsRestantes(resasRestantes, departEffectif, reservationsNonAssignees);
                 break;
             }
 
             Vehicule vehicule = vehiculeTrouve.getVehicule();
             Timestamp departVehicule = vehiculeTrouve.getDateRetour();
 
-            // Mettre à jour le départ effectif si le véhicule n'est pas dispo immédiatement
             if (departVehicule.after(departEffectif)) {
+                long attenteVehiculeMillis = departVehicule.getTime() - depart.getTime();
+                // On attend un véhicule qui revient seulement si le décalage reste
+                // dans la fenêtre d'attente du groupe.
+                if (attenteVehiculeMillis > attenteMaxMillis) {
+                    reporterReservationsRestantes(resasRestantes, departEffectif, reservationsNonAssignees);
+                    break;
+                }
                 departEffectif = departVehicule;
             }
 
             // Ajouter le véhicule aux utilisés et créer un bin
             vehiculesUtilises.add(vehicule.getId());
             int placesRestantes = vehicule.getPlace();
+
+            // Commencer par la réservation de tête (la plus grosse restante).
+            int paxCible = Math.min(premiereResa.passagersRestants, placesRestantes);
+            assignations.add(new GroupAssignment(
+                    premiereResa.reservation,
+                    vehicule.getId(),
+                    paxCible,
+                    departEffectif));
+            placesRestantes -= paxCible;
+            premiereResa.passagersRestants -= paxCible;
+            if (premiereResa.passagersRestants <= 0) {
+                resasRestantes.remove(0);
+            }
 
             // ----------------------------------------------------
             // 2b : REMPLIR CE VÉHICULE avant d'en ouvrir un autre
@@ -196,38 +219,71 @@ public class GroupeAssignationService {
         return assignations;
     }
 
+    private void reporterReservationsRestantes(List<ReservationRestante> resasRestantes,
+            Timestamp departEffectif,
+            List<Reservation> reservationsNonAssignees) {
+        for (ReservationRestante rr : resasRestantes) {
+            if (rr.passagersRestants > 0) {
+                Reservation restante = copierReservationAvecNbPassagers(rr.reservation, rr.passagersRestants);
+                restante.setDate_heure_depart_groupe(departEffectif);
+                reservationsNonAssignees.add(restante);
+            }
+        }
+    }
+
+    private void trierResasRestantesParPaxDesc(List<ReservationRestante> resasRestantes) {
+        resasRestantes.sort((a, b) -> {
+            int cmpPax = Integer.compare(b.passagersRestants, a.passagersRestants);
+            if (cmpPax != 0) {
+                return cmpPax;
+            }
+
+            Timestamp arriveeA = a.reservation.getDate_heure_arrivee();
+            Timestamp arriveeB = b.reservation.getDate_heure_arrivee();
+            if (arriveeA != null && arriveeB != null) {
+                int cmpArrivee = arriveeA.compareTo(arriveeB);
+                if (cmpArrivee != 0) {
+                    return cmpArrivee;
+                }
+            }
+
+            return Integer.compare(
+                    a.reservation.getId_reservation(),
+                    b.reservation.getId_reservation());
+        });
+    }
+
     /**
-     * Trouve la réservation qui minimise |nb_pax - places_restantes| (Best-Fit pour remplissage).
+     * Trouve la réservation qui minimise |nb_pax - places_restantes| (Best-Fit pour
+     * remplissage).
      *
-     * @param resasRestantes liste des réservations avec leurs passagers restants
+     * @param resasRestantes  liste des réservations avec leurs passagers restants
      * @param placesRestantes nombre de places restantes dans le véhicule
      * @return index de la meilleure résa, ou -1 si aucune ne peut rentrer
      */
     private int trouverResaBestFitPourVehicule(List<ReservationRestante> resasRestantes, int placesRestantes) {
         int meilleurIdx = -1;
         int meilleurEcart = Integer.MAX_VALUE;
+        int meilleurNbPax = Integer.MAX_VALUE;
 
         for (int i = 0; i < resasRestantes.size(); i++) {
             int nbPax = resasRestantes.get(i).passagersRestants;
 
-            if (nbPax <= 0) continue;
+            if (nbPax <= 0)
+                continue;
 
-            // Calculer l'écart |nb_pax - places_restantes|
-            // Si nb_pax <= places_restantes → écart = places_restantes - nb_pax (places vides après)
-            // Si nb_pax > places_restantes → on prend ce qu'on peut, écart = 0 (véhicule plein)
-            int ecart;
-            if (nbPax <= placesRestantes) {
-                ecart = placesRestantes - nbPax; // Gaspillage si on prend cette résa
-            } else {
-                ecart = 0; // On remplit le véhicule complètement
-            }
+            // Best-fit strict: minimiser |placesRestantes - nbPax|.
+            // En dépassement, cela favorise la réservation qui dépasse le moins.
+            int ecart = Math.abs(placesRestantes - nbPax);
 
-            if (ecart < meilleurEcart) {
+            if (ecart < meilleurEcart || (ecart == meilleurEcart && nbPax < meilleurNbPax)) {
                 meilleurEcart = ecart;
                 meilleurIdx = i;
+                meilleurNbPax = nbPax;
 
                 // Si écart = 0, c'est parfait (véhicule plein ou exactement la bonne taille)
-                if (ecart == 0) break;
+                if (ecart == 0)
+                    break;
             }
         }
 
@@ -317,7 +373,8 @@ public class GroupeAssignationService {
             return;
         }
 
-        // Sprint 7 : Calculer les retours par véhicule en tenant compte des dates de départ individuelles
+        // Sprint 7 : Calculer les retours par véhicule en tenant compte des dates de
+        // départ individuelles
         Map<Integer, Timestamp> retourByVehicule = calculerRetoursParVehicule(assignations, departGroupe, context);
         String sql = "INSERT INTO Planification (id_reservation, id_vehicule, date_heure_depart_aeroport, date_heure_retour_aeroport, nb_passager_assigne) "
                 +
@@ -342,7 +399,7 @@ public class GroupeAssignationService {
 
                     stmt.setInt(1, assignation.getReservation().getId_reservation());
                     stmt.setInt(2, assignation.getIdVehicule());
-                    stmt.setTimestamp(3, departEffectif);  // ← Utilise la date effective
+                    stmt.setTimestamp(3, departEffectif); // ← Utilise la date effective
                     stmt.setTimestamp(4, retour);
                     stmt.setInt(5, assignation.getNbPassagersAssignes());
                     stmt.addBatch();
@@ -386,7 +443,8 @@ public class GroupeAssignationService {
                 hotels.add(idHotel);
             }
 
-            // Sprint 7 : Trouver la date de départ pour ce véhicule (prendre la plus tardive si plusieurs)
+            // Sprint 7 : Trouver la date de départ pour ce véhicule (prendre la plus
+            // tardive si plusieurs)
             Timestamp departAssignation = assignation.getDateDepart() != null
                     ? assignation.getDateDepart()
                     : departDefaut;

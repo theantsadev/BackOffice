@@ -1,3 +1,4 @@
+-- Active: 1774545998122@@127.0.0.1@5433@projet_hotel
 -- Script de réinitialisation des données (supprime toutes les données sans supprimer les tables)
 -- Ordre de suppression important pour respecter les contraintes de clés étrangères
 
