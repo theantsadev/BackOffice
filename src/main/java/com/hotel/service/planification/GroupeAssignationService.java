@@ -272,7 +272,8 @@ public class GroupeAssignationService {
             PlanificationContext context) throws SQLException {
         Map<Integer, List<Integer>> hotelsByVehicule = new HashMap<>();
         for (GroupAssignment assignation : assignations) {
-            List<Integer> hotels = hotelsByVehicule.computeIfAbsent(assignation.getIdVehicule(), k -> new ArrayList<>());
+            List<Integer> hotels = hotelsByVehicule.computeIfAbsent(assignation.getIdVehicule(),
+                    k -> new ArrayList<>());
             int idHotel = assignation.getReservation().getId_hotel();
             if (!hotels.contains(idHotel)) {
                 hotels.add(idHotel);

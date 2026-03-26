@@ -15,7 +15,6 @@ import com.hotel.database.DatabaseConnection;
 import com.hotel.model.Hotel;
 import com.hotel.model.Planification;
 import com.hotel.model.Reservation;
-import com.hotel.model.Vehicule;
 import com.hotel.service.planification.GroupAssignment;
 import com.hotel.service.planification.GroupeAssignationService;
 import com.hotel.service.planification.PlanificationContext;
@@ -73,91 +72,7 @@ public class PlanificationService {
         return null;
     }
 
-    public double getDureeTrajetMinutes(int idReservation) throws SQLException {
-        Reservation reservation = getReservationById(idReservation);
-        if (reservation == null) {
-            throw new SQLException("Reservation non trouvee: " + idReservation);
-        }
-        return routeCalculationService.getDureeTrajetMinutes(reservation);
-    }
-
-    public Timestamp getDateHeureDepartAeroport(int idReservation) throws SQLException {
-        Reservation reservation = getReservationById(idReservation);
-        if (reservation == null) {
-            throw new SQLException("Reservation non trouvee: " + idReservation);
-        }
-        return routeCalculationService.getDateHeureDepartAeroport(reservation);
-    }
-
-    public Timestamp getDateHeureRetourAeroport(int idReservation) throws SQLException {
-        Reservation reservation = getReservationById(idReservation);
-        if (reservation == null) {
-            throw new SQLException("Reservation non trouvee: " + idReservation);
-        }
-
-        double dureeMinutes = routeCalculationService.getDureeTrajetMinutes(reservation);
-        return routeCalculationService.getDateHeureRetourAeroport(reservation, dureeMinutes);
-    }
-
-    public Vehicule getVehiculeApproprieForReservation(int idReservation) throws SQLException {
-        Reservation reservation = getReservationById(idReservation);
-        if (reservation == null) {
-            throw new SQLException("Reservation non trouvee: " + idReservation);
-        }
-
-        int nbPassagers = reservation.getNb_passager();
-        Timestamp depart = getDateHeureDepartAeroport(idReservation);
-        Timestamp retour = getDateHeureRetourAeroport(idReservation);
-
-        return vehiculeSelectionService.getVehiculeApproprieForReservation(nbPassagers, depart, retour);
-    }
-
-    public Planification planifier(int idReservation, int idVehicule,
-            Timestamp dateHeureDepart, Timestamp dateHeureRetour) throws SQLException {
-        Reservation reservation = getReservationById(idReservation);
-        if (reservation == null) {
-            throw new SQLException("Reservation non trouvee: " + idReservation);
-        }
-
-        return planifier(idReservation, idVehicule, dateHeureDepart, dateHeureRetour, reservation.getNb_passager());
-    }
-
-    public Planification planifier(int idReservation, int idVehicule,
-            Timestamp dateHeureDepart, Timestamp dateHeureRetour,
-            int nbPassagersAssignes) throws SQLException {
-        if (nbPassagersAssignes <= 0) {
-            throw new SQLException("Nombre de passagers assignes invalide: " + nbPassagersAssignes);
-        }
-
-        String sql = "INSERT INTO Planification (id_reservation, id_vehicule, " +
-                "date_heure_depart_aeroport, date_heure_retour_aeroport, nb_passager_assigne) " +
-                "VALUES (?, ?, ?, ?, ?) RETURNING id_planification";
-
-        try (Connection conn = DatabaseConnection.getConnection();
-                PreparedStatement stmt = conn.prepareStatement(sql)) {
-
-            stmt.setInt(1, idReservation);
-            stmt.setInt(2, idVehicule);
-            stmt.setTimestamp(3, dateHeureDepart);
-            stmt.setTimestamp(4, dateHeureRetour);
-            stmt.setInt(5, nbPassagersAssignes);
-
-            try (ResultSet rs = stmt.executeQuery()) {
-                if (rs.next()) {
-                    Planification planification = new Planification();
-                    planification.setIdPlanification(rs.getInt("id_planification"));
-                    planification.setIdReservation(idReservation);
-                    planification.setIdVehicule(idVehicule);
-                    planification.setDateHeureDepartAeroport(dateHeureDepart);
-                    planification.setDateHeureRetourAeroport(dateHeureRetour);
-                    planification.setNbPassager(nbPassagersAssignes);
-                    return planification;
-                }
-            }
-        }
-
-        return null;
-    }
+    
 
     public List<Planification> getPlanificationsByDate(java.util.Date date) throws SQLException {
         List<Planification> planifications = new ArrayList<>();
@@ -244,59 +159,7 @@ public class PlanificationService {
         }
     }
 
-    public List<Reservation> getReservationsNonAssignees() throws SQLException {
-        List<Reservation> reservations = new ArrayList<>();
-
-        String sql = "SELECT r.id_reservation, r.id_client, " +
-                "(r.nb_passager - COALESCE(pa.nb_assigne, 0)) AS nb_passager_restant, " +
-                "r.date_heure_arrivee, r.id_hotel, h.nom as nom_hotel " +
-                "FROM Reservation r " +
-                "LEFT JOIN Hotel h ON r.id_hotel = h.id_hotel " +
-                "LEFT JOIN (" +
-                "   SELECT p.id_reservation, SUM(COALESCE(p.nb_passager_assigne, r2.nb_passager)) as nb_assigne " +
-                "   FROM Planification p " +
-                "   JOIN Reservation r2 ON r2.id_reservation = p.id_reservation " +
-                "   GROUP BY p.id_reservation" +
-                ") pa ON pa.id_reservation = r.id_reservation " +
-                "WHERE (r.nb_passager - COALESCE(pa.nb_assigne, 0)) > 0 " +
-                "ORDER BY r.date_heure_arrivee";
-
-        try (Connection conn = DatabaseConnection.getConnection();
-                PreparedStatement stmt = conn.prepareStatement(sql);
-                ResultSet rs = stmt.executeQuery()) {
-
-            while (rs.next()) {
-                Reservation reservation = new Reservation();
-                reservation.setId_reservation(rs.getInt("id_reservation"));
-                reservation.setId_client(rs.getString("id_client"));
-                reservation.setNb_passager(rs.getInt("nb_passager_restant"));
-                reservation.setDate_heure_arrivee(rs.getTimestamp("date_heure_arrivee"));
-                reservation.setId_hotel(rs.getInt("id_hotel"));
-                reservation.setNom_hotel(rs.getString("nom_hotel"));
-                reservations.add(reservation);
-            }
-        }
-
-        return reservations;
-    }
-
-    public boolean isReservationDejaAssignee(int idReservation) throws SQLException {
-        String sql = "SELECT COUNT(*) FROM Planification WHERE id_reservation = ?";
-
-        try (Connection conn = DatabaseConnection.getConnection();
-                PreparedStatement stmt = conn.prepareStatement(sql)) {
-
-            stmt.setInt(1, idReservation);
-
-            try (ResultSet rs = stmt.executeQuery()) {
-                if (rs.next()) {
-                    return rs.getInt(1) > 0;
-                }
-            }
-        }
-
-        return false;
-    }
+    
 
     public Map<String, Object> planifierAutoParDate(java.util.Date date) throws SQLException {
         return planifierAutoParDate(date, null);

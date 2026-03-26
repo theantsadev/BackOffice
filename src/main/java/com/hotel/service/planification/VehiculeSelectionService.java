@@ -47,41 +47,6 @@ public class VehiculeSelectionService {
         return true;
     }
 
-    public Vehicule getVehiculeApproprieForReservation(int nbPassagers, Timestamp depart, Timestamp retour)
-            throws SQLException {
-        String sql = "SELECT * FROM Vehicule WHERE place >= ?";
-
-        try (Connection conn = DatabaseConnection.getConnection();
-                PreparedStatement stmt = conn.prepareStatement(sql)) {
-
-            stmt.setInt(1, nbPassagers);
-            List<Vehicule> candidatsDisponibles = new ArrayList<>();
-
-            try (ResultSet rs = stmt.executeQuery()) {
-                while (rs.next()) {
-                    Vehicule vehicule = new Vehicule();
-                    vehicule.setId(rs.getInt("id"));
-                    vehicule.setReference(rs.getString("reference"));
-                    vehicule.setPlace(rs.getInt("place"));
-                    vehicule.setTypeCarburant(rs.getString("type_carburant"));
-
-                    if (estVoitureDisponible(vehicule.getId(), depart, retour)) {
-                        candidatsDisponibles.add(vehicule);
-                    }
-                }
-            }
-
-            if (!candidatsDisponibles.isEmpty()) {
-                Map<Integer, Integer> nbTrajetsByVehicule = chargerNombreTrajetsParVehicule(
-                        extraireIdsVehicules(candidatsDisponibles));
-                candidatsDisponibles.sort(
-                        (a, b) -> comparerVehiculesSprint6(a, b, nbPassagers, nbTrajetsByVehicule));
-                return candidatsDisponibles.get(0);
-            }
-        }
-
-        return null;
-    }
 
     public List<Vehicule> getAllVehiculesLibres(int nbPax, Timestamp depart, Timestamp retour,
             List<Integer> excludeIds) throws SQLException {
