@@ -66,96 +66,185 @@ public class GroupeAssignationService {
         return groupes;
     }
 
+    /**
+     * =====================================================================
+     * SPRINT 7 : Traitement d'un groupe avec l'algorithme Best-Fit
+     * =====================================================================
+     *
+     * ALGORITHME :
+     *
+     * 1. TRIER les réservations par nb_passagers DÉCROISSANT
+     *
+     * 2. TANT QUE il reste des réservations non assignées :
+     *    a) Prendre la PREMIÈRE résa (la plus grosse)
+     *    b) Trouver le véhicule Best-Fit (place >= nb_pax, gaspillage minimal)
+     *       - Si aucun véhicule assez grand → prendre le plus grand (scission)
+     *       - Si véhicule en retour est meilleur → ajuster date départ
+     *    c) REMPLIR CE VÉHICULE avant d'en ouvrir un autre :
+     *       - Chercher dans les résas restantes celle qui minimize |nb_pax - places_restantes|
+     *       - Répéter jusqu'à véhicule plein ou aucune résa ne rentre
+     *    d) Si aucun véhicule dispo → reporter au prochain groupe
+     *
+     * 3. Les résas non assignées sont reportées au prochain groupe d'attente
+     */
     public List<GroupAssignment> traiterGroupe(Timestamp depart,
             Timestamp retourInitial,
             List<Reservation> groupe,
             List<Reservation> reservationsNonAssignees) throws SQLException {
+
         List<GroupAssignment> assignations = new ArrayList<>();
+
+        // ============================================================
+        // ÉTAPE 1 : Tri du groupe par nb_passagers DÉCROISSANT
+        // ============================================================
         groupe.sort((a, b) -> Integer.compare(b.getNb_passager(), a.getNb_passager()));
 
+        // Liste des réservations restantes à traiter (avec leurs passagers restants)
+        List<ReservationRestante> resasRestantes = new ArrayList<>();
+        for (Reservation r : groupe) {
+            resasRestantes.add(new ReservationRestante(r, r.getNb_passager()));
+        }
+
+        // Liste des véhicules déjà utilisés
         List<Integer> vehiculesUtilises = new ArrayList<>();
+
+        // Charger les bins existants (véhicules déjà ouverts sur ce créneau)
         List<VehiculeBin> bins = chargerBinsExistants(depart, vehiculesUtilises);
 
-        for (int i = 0; i < groupe.size(); i++) {
-            Reservation reservation = groupe.get(i);
-            int passagersRestants = reservation.getNb_passager();
+        // Date de départ effective (peut être ajustée si on attend un véhicule)
+        Timestamp departEffectif = depart;
 
-            try {
-                while (passagersRestants > 0) {
-                    int bestBinIdx = vehiculeSelectionService.trouverMeilleurBin(bins, passagersRestants);
-                    Vehicule meilleurNouveauVehicule = vehiculeSelectionService.choisirVehiculeAvecLookAhead(
-                            passagersRestants,
-                            depart,
-                            retourInitial,
-                            vehiculesUtilises,
-                            groupe.subList(i + 1, groupe.size()));
-                    Vehicule nouveauVehicule = meilleurNouveauVehicule;
+        // ============================================================
+        // ÉTAPE 2 : Traiter les réservations
+        // ============================================================
+        while (!resasRestantes.isEmpty()) {
+            // Prendre la première résa (tri DESC, donc la plus grosse)
+            ReservationRestante premiereResa = resasRestantes.get(0);
+            int nbPaxPremiere = premiereResa.passagersRestants;
 
-                    boolean peutAssignerBin = bestBinIdx >= 0;
-                    boolean peutOuvrirNouveau = meilleurNouveauVehicule != null;
+            // ----------------------------------------------------
+            // 2a : Chercher le meilleur véhicule Best-Fit
+            // ----------------------------------------------------
+            VehiculeRetour vehiculeTrouve = vehiculeSelectionService.trouverVehiculeBestFitAvecAttente(
+                    nbPaxPremiere,
+                    departEffectif,
+                    retourInitial,
+                    vehiculesUtilises);
 
-                    if (!peutAssignerBin && !peutOuvrirNouveau) {
-                        break;
-                    }
-
-                    if (peutAssignerBin && !peutOuvrirNouveau) {
-                        VehiculeBin bin = bins.get(bestBinIdx);
-                        int passagersAffectes = Math.min(passagersRestants, bin.getPlacesRestantes());
-                        GroupAssignment assignation = assignerSurBinExistant(reservation, bin, passagersAffectes);
-                        assignations.add(assignation);
-                        passagersRestants -= passagersAffectes;
-                        continue;
-                    }
-
-                    if (!peutAssignerBin) {
-                        if (nouveauVehicule == null) {
-                            break;
-                        }
-                        int passagersAffectes = Math.min(passagersRestants, nouveauVehicule.getPlace());
-                        GroupAssignment assignation = assignerSurNouveauVehicule(reservation, vehiculesUtilises,
-                                bins, nouveauVehicule, passagersAffectes);
-                        assignations.add(assignation);
-                        passagersRestants -= passagersAffectes;
-                        continue;
-                    }
-
-                    VehiculeBin binCandidat = bins.get(bestBinIdx);
-                    boolean prendreNouveau = vehiculeSelectionService.doitPrendreNouveauVehicule(
-                            binCandidat,
-                            nouveauVehicule,
-                            passagersRestants);
-
-                    if (prendreNouveau) {
-                        int passagersAffectes = Math.min(passagersRestants, nouveauVehicule.getPlace());
-                        GroupAssignment assignation = assignerSurNouveauVehicule(reservation, vehiculesUtilises,
-                                bins, nouveauVehicule, passagersAffectes);
-                        assignations.add(assignation);
-                        passagersRestants -= passagersAffectes;
-                    } else {
-                        int passagersAffectes = Math.min(passagersRestants, binCandidat.getPlacesRestantes());
-                        GroupAssignment assignation = assignerSurBinExistant(reservation, binCandidat,
-                                passagersAffectes);
-                        assignations.add(assignation);
-                        passagersRestants -= passagersAffectes;
+            // Si aucun véhicule disponible → reporter toutes les résas restantes
+            if (vehiculeTrouve == null) {
+                for (ReservationRestante rr : resasRestantes) {
+                    if (rr.passagersRestants > 0) {
+                        Reservation restante = copierReservationAvecNbPassagers(rr.reservation, rr.passagersRestants);
+                        restante.setDate_heure_depart_groupe(departEffectif);
+                        reservationsNonAssignees.add(restante);
                     }
                 }
+                break;
+            }
 
-                if (passagersRestants > 0) {
-                    Reservation restante = copierReservationAvecNbPassagers(reservation, passagersRestants);
-                    restante.setDate_heure_depart_groupe(depart);
-                    reservationsNonAssignees.add(restante);
+            Vehicule vehicule = vehiculeTrouve.getVehicule();
+            Timestamp departVehicule = vehiculeTrouve.getDateRetour();
+
+            // Mettre à jour le départ effectif si le véhicule n'est pas dispo immédiatement
+            if (departVehicule.after(departEffectif)) {
+                departEffectif = departVehicule;
+            }
+
+            // Ajouter le véhicule aux utilisés et créer un bin
+            vehiculesUtilises.add(vehicule.getId());
+            int placesRestantes = vehicule.getPlace();
+
+            // ----------------------------------------------------
+            // 2b : REMPLIR CE VÉHICULE avant d'en ouvrir un autre
+            // ----------------------------------------------------
+            while (placesRestantes > 0 && !resasRestantes.isEmpty()) {
+                // Trouver la résa qui minimise |nb_pax - places_restantes|
+                int meilleurIdx = trouverResaBestFitPourVehicule(resasRestantes, placesRestantes);
+
+                if (meilleurIdx < 0) {
+                    break; // Aucune résa ne peut rentrer
                 }
 
-            } catch (Exception e) {
-                System.err.println("Erreur planification auto pour reservation "
-                        + reservation.getId_reservation() + ": " + e.getMessage());
-                Reservation restante = copierReservationAvecNbPassagers(reservation, passagersRestants);
-                restante.setDate_heure_depart_groupe(depart);
-                reservationsNonAssignees.add(restante);
+                ReservationRestante resaChoisie = resasRestantes.get(meilleurIdx);
+                int passagersAAffectes = Math.min(resaChoisie.passagersRestants, placesRestantes);
+
+                // Créer l'assignation
+                GroupAssignment assignation = new GroupAssignment(
+                        resaChoisie.reservation,
+                        vehicule.getId(),
+                        passagersAAffectes,
+                        departEffectif);
+                assignations.add(assignation);
+
+                // Mettre à jour
+                placesRestantes -= passagersAAffectes;
+                resaChoisie.passagersRestants -= passagersAAffectes;
+
+                // Si la résa est complètement assignée, la retirer de la liste
+                if (resaChoisie.passagersRestants <= 0) {
+                    resasRestantes.remove(meilleurIdx);
+                }
+            }
+
+            // Ajouter le bin avec les places restantes (pour les prochains groupes)
+            if (placesRestantes > 0) {
+                bins.add(new VehiculeBin(vehicule.getId(), placesRestantes, vehicule.getTypeCarburant()));
             }
         }
 
         return assignations;
+    }
+
+    /**
+     * Trouve la réservation qui minimise |nb_pax - places_restantes| (Best-Fit pour remplissage).
+     *
+     * @param resasRestantes liste des réservations avec leurs passagers restants
+     * @param placesRestantes nombre de places restantes dans le véhicule
+     * @return index de la meilleure résa, ou -1 si aucune ne peut rentrer
+     */
+    private int trouverResaBestFitPourVehicule(List<ReservationRestante> resasRestantes, int placesRestantes) {
+        int meilleurIdx = -1;
+        int meilleurEcart = Integer.MAX_VALUE;
+
+        for (int i = 0; i < resasRestantes.size(); i++) {
+            int nbPax = resasRestantes.get(i).passagersRestants;
+
+            if (nbPax <= 0) continue;
+
+            // Calculer l'écart |nb_pax - places_restantes|
+            // Si nb_pax <= places_restantes → écart = places_restantes - nb_pax (places vides après)
+            // Si nb_pax > places_restantes → on prend ce qu'on peut, écart = 0 (véhicule plein)
+            int ecart;
+            if (nbPax <= placesRestantes) {
+                ecart = placesRestantes - nbPax; // Gaspillage si on prend cette résa
+            } else {
+                ecart = 0; // On remplit le véhicule complètement
+            }
+
+            if (ecart < meilleurEcart) {
+                meilleurEcart = ecart;
+                meilleurIdx = i;
+
+                // Si écart = 0, c'est parfait (véhicule plein ou exactement la bonne taille)
+                if (ecart == 0) break;
+            }
+        }
+
+        return meilleurIdx;
+    }
+
+    /**
+     * Classe interne pour suivre les passagers restants d'une réservation.
+     */
+    private static class ReservationRestante {
+        final Reservation reservation;
+        int passagersRestants;
+
+        ReservationRestante(Reservation reservation, int passagersRestants) {
+            this.reservation = reservation;
+            this.passagersRestants = passagersRestants;
+        }
     }
 
     public List<VehiculeBin> chargerBinsExistants(Timestamp depart, List<Integer> vehiculesUtilises) {
@@ -188,22 +277,24 @@ public class GroupeAssignationService {
 
     private GroupAssignment assignerSurBinExistant(Reservation reservation,
             VehiculeBin bin,
-            int nbPassagersAffectes) {
+            int nbPassagersAffectes,
+            Timestamp dateDepart) {
         bin.decrPlacesRestantes(nbPassagersAffectes);
-        return new GroupAssignment(reservation, bin.getIdVehicule(), nbPassagersAffectes);
+        return new GroupAssignment(reservation, bin.getIdVehicule(), nbPassagersAffectes, dateDepart);
     }
 
     private GroupAssignment assignerSurNouveauVehicule(Reservation reservation,
             List<Integer> vehiculesUtilises,
             List<VehiculeBin> bins,
             Vehicule vehicule,
-            int nbPassagersAffectes) {
+            int nbPassagersAffectes,
+            Timestamp dateDepart) {
         vehiculesUtilises.add(vehicule.getId());
         bins.add(new VehiculeBin(
                 vehicule.getId(),
                 vehicule.getPlace() - nbPassagersAffectes,
                 vehicule.getTypeCarburant()));
-        return new GroupAssignment(reservation, vehicule.getId(), nbPassagersAffectes);
+        return new GroupAssignment(reservation, vehicule.getId(), nbPassagersAffectes, dateDepart);
     }
 
     public Timestamp calculerDepartGroupeSelonAssignations(List<GroupAssignment> assignations,
@@ -226,6 +317,7 @@ public class GroupeAssignationService {
             return;
         }
 
+        // Sprint 7 : Calculer les retours par véhicule en tenant compte des dates de départ individuelles
         Map<Integer, Timestamp> retourByVehicule = calculerRetoursParVehicule(assignations, departGroupe, context);
         String sql = "INSERT INTO Planification (id_reservation, id_vehicule, date_heure_depart_aeroport, date_heure_retour_aeroport, nb_passager_assigne) "
                 +
@@ -238,6 +330,11 @@ public class GroupeAssignationService {
             conn.setAutoCommit(false);
             try {
                 for (GroupAssignment assignation : assignations) {
+                    // Sprint 7 : Utiliser la date de départ de l'assignation si disponible
+                    Timestamp departEffectif = assignation.getDateDepart() != null
+                            ? assignation.getDateDepart()
+                            : departGroupe;
+
                     Timestamp retour = retourByVehicule.get(assignation.getIdVehicule());
                     if (retour == null) {
                         throw new SQLException("Retour introuvable pour le vehicule " + assignation.getIdVehicule());
@@ -245,7 +342,7 @@ public class GroupeAssignationService {
 
                     stmt.setInt(1, assignation.getReservation().getId_reservation());
                     stmt.setInt(2, assignation.getIdVehicule());
-                    stmt.setTimestamp(3, departGroupe);
+                    stmt.setTimestamp(3, departEffectif);  // ← Utilise la date effective
                     stmt.setTimestamp(4, retour);
                     stmt.setInt(5, assignation.getNbPassagersAssignes());
                     stmt.addBatch();
@@ -267,25 +364,49 @@ public class GroupeAssignationService {
         }
     }
 
+    /**
+     * Calcule la date/heure de retour pour chaque véhicule utilisé.
+     * Sprint 7 : Utilise la date de départ de chaque assignation si disponible.
+     */
     private Map<Integer, Timestamp> calculerRetoursParVehicule(List<GroupAssignment> assignations,
-            Timestamp depart,
+            Timestamp departDefaut,
             PlanificationContext context) throws SQLException {
+
+        // Regrouper les hôtels et trouver la date de départ par véhicule
         Map<Integer, List<Integer>> hotelsByVehicule = new HashMap<>();
+        Map<Integer, Timestamp> departByVehicule = new HashMap<>();
+
         for (GroupAssignment assignation : assignations) {
-            List<Integer> hotels = hotelsByVehicule.computeIfAbsent(assignation.getIdVehicule(),
-                    k -> new ArrayList<>());
+            int idVehicule = assignation.getIdVehicule();
+
+            // Ajouter l'hôtel à la liste du véhicule
+            List<Integer> hotels = hotelsByVehicule.computeIfAbsent(idVehicule, k -> new ArrayList<>());
             int idHotel = assignation.getReservation().getId_hotel();
             if (!hotels.contains(idHotel)) {
                 hotels.add(idHotel);
             }
+
+            // Sprint 7 : Trouver la date de départ pour ce véhicule (prendre la plus tardive si plusieurs)
+            Timestamp departAssignation = assignation.getDateDepart() != null
+                    ? assignation.getDateDepart()
+                    : departDefaut;
+
+            Timestamp departActuel = departByVehicule.get(idVehicule);
+            if (departActuel == null || departAssignation.after(departActuel)) {
+                departByVehicule.put(idVehicule, departAssignation);
+            }
         }
 
+        // Calculer le retour pour chaque véhicule
         Map<Integer, Timestamp> retourByVehicule = new HashMap<>();
         for (Map.Entry<Integer, List<Integer>> entry : hotelsByVehicule.entrySet()) {
+            int idVehicule = entry.getKey();
+            Timestamp depart = departByVehicule.get(idVehicule);
+
             List<Integer> hotelsTries = routeCalculationService.trierHotelsParDistanceAeroport(entry.getValue(),
                     context);
             RouteMetrics metrics = routeCalculationService.calculerRouteDepuisHotels(hotelsTries, context);
-            retourByVehicule.put(entry.getKey(), new Timestamp(depart.getTime() + metrics.getTotalDurationMillis()));
+            retourByVehicule.put(idVehicule, new Timestamp(depart.getTime() + metrics.getTotalDurationMillis()));
         }
 
         return retourByVehicule;

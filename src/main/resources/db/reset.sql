@@ -44,6 +44,7 @@ CREATE TABLE Vehicule (
    reference VARCHAR(50) NOT NULL UNIQUE,
    place INTEGER NOT NULL,
    type_carburant CHAR(1) NOT NULL CHECK (type_carburant IN ('D', 'E')),
+   heure_debut_dispo TIME,
    PRIMARY KEY (id)
 );
 
@@ -118,12 +119,12 @@ INSERT INTO Reservation (nb_passager, date_heure_arrivee, id_client, id_hotel) V
     ( 1, '2026-02-18 22:55:00', '8640', 4);
 
 -- Insertion des véhicules
-INSERT INTO Vehicule (reference, place, type_carburant) VALUES
-    ('VH-001', 4, 'E'),
-    ('VH-002', 5, 'D'),
-    ('VH-003', 7, 'D'),
-    ('VH-004', 2, 'E'),
-    ('VH-005', 9, 'D');
+INSERT INTO Vehicule (reference, place, type_carburant, heure_debut_dispo) VALUES
+    ('VH-001', 4, 'E', '00:00:00'),
+    ('VH-002', 5, 'D', '00:00:00'),
+    ('VH-003', 7, 'D', '00:00:00'),
+    ('VH-004', 2, 'E', '00:00:00'),
+    ('VH-005', 9, 'D', '00:00:00');
 
 -- Insertion des paramètres initiaux
 INSERT INTO Parametre (cle, valeur, unite) VALUES
