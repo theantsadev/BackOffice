@@ -126,97 +126,142 @@ public class GroupeAssignationService {
         // ============================================================
         // ÉTAPE 2 : Traiter les réservations
         // ============================================================
+        boolean reportRestantes = false;
         while (!resasRestantes.isEmpty()) {
             trierResasRestantesParPaxDesc(resasRestantes);
 
-            // ----------------------------------------------------
-            // 2a : Ouvrir un bin depuis la plus grosse résa restante
-            // ----------------------------------------------------
-            ReservationRestante premiereResa = resasRestantes.get(0);
-            int nbPaxPremiere = premiereResa.passagersRestants;
+            // 2a : On traite d'abord la réservation courante jusqu'au bout
+            // (même si elle est scindée sur plusieurs véhicules).
+            ReservationRestante resaCourante = resasRestantes.get(0);
 
-            VehiculeRetour vehiculeTrouve = vehiculeSelectionService.trouverVehiculeBestFitAvecAttente(
-                    nbPaxPremiere,
-                    departEffectif,
-                    retourInitial,
-                    vehiculesUtilises);
+            while (resaCourante.passagersRestants > 0) {
+                // 2a-1 : Essayer d'abord un véhicule déjà ouvert (bin existant)
+                int binIdx = trouverMeilleurBinPourReservation(bins, resaCourante.passagersRestants);
+                if (binIdx >= 0) {
+                    VehiculeBin bin = bins.get(binIdx);
+                    int passagersAAffectes = Math.min(resaCourante.passagersRestants, bin.getPlacesRestantes());
 
-            // Si aucun véhicule disponible → reporter toutes les résas restantes
-            if (vehiculeTrouve == null) {
+                    assignations.add(new GroupAssignment(
+                            resaCourante.reservation,
+                            bin.getIdVehicule(),
+                            passagersAAffectes,
+                            departEffectif));
+
+                    bin.decrPlacesRestantes(passagersAAffectes);
+                    resaCourante.passagersRestants -= passagersAAffectes;
+
+                    if (bin.getPlacesRestantes() <= 0) {
+                        bins.remove(binIdx);
+                    }
+
+                    continue;
+                }
+
+                // 2a-2 : Sinon, ouvrir un nouveau véhicule pour continuer la même résa
+                VehiculeRetour vehiculeTrouve = vehiculeSelectionService.trouverVehiculeBestFitAvecAttente(
+                        resaCourante.passagersRestants,
+                        departEffectif,
+                        retourInitial,
+                        vehiculesUtilises);
+
+                if (vehiculeTrouve == null) {
+                    reportRestantes = true;
+                    break;
+                }
+
+                Vehicule vehicule = vehiculeTrouve.getVehicule();
+                Timestamp departVehicule = vehiculeTrouve.getDateRetour();
+
+                if (departVehicule.after(departEffectif)) {
+                    long attenteVehiculeMillis = departVehicule.getTime() - depart.getTime();
+                    if (attenteVehiculeMillis > attenteMaxMillis) {
+                        reportRestantes = true;
+                        break;
+                    }
+                    departEffectif = departVehicule;
+                }
+
+                vehiculesUtilises.add(vehicule.getId());
+                int placesRestantes = vehicule.getPlace();
+
+                int paxCible = Math.min(resaCourante.passagersRestants, placesRestantes);
+                assignations.add(new GroupAssignment(
+                        resaCourante.reservation,
+                        vehicule.getId(),
+                        paxCible,
+                        departEffectif));
+
+                placesRestantes -= paxCible;
+                resaCourante.passagersRestants -= paxCible;
+
+                // Une fois la résa courante servie sur ce véhicule, remplir le reste
+                // avec la résa la plus proche en nombre de passagers.
+                while (placesRestantes > 0 && !resasRestantes.isEmpty()) {
+                    int meilleurIdx = trouverResaBestFitPourVehicule(resasRestantes, placesRestantes);
+                    if (meilleurIdx < 0) {
+                        break;
+                    }
+
+                    ReservationRestante resaChoisie = resasRestantes.get(meilleurIdx);
+                    if (resaChoisie == resaCourante && resaCourante.passagersRestants > 0) {
+                        break;
+                    }
+
+                    int passagersAAffectes = Math.min(resaChoisie.passagersRestants, placesRestantes);
+                    assignations.add(new GroupAssignment(
+                            resaChoisie.reservation,
+                            vehicule.getId(),
+                            passagersAAffectes,
+                            departEffectif));
+
+                    placesRestantes -= passagersAAffectes;
+                    resaChoisie.passagersRestants -= passagersAAffectes;
+
+                    if (resaChoisie.passagersRestants <= 0) {
+                        resasRestantes.remove(meilleurIdx);
+                    }
+                }
+
+                if (placesRestantes > 0) {
+                    bins.add(new VehiculeBin(vehicule.getId(), placesRestantes, vehicule.getTypeCarburant()));
+                }
+            }
+
+            if (reportRestantes) {
                 reporterReservationsRestantes(resasRestantes, departEffectif, reservationsNonAssignees);
                 break;
             }
 
-            Vehicule vehicule = vehiculeTrouve.getVehicule();
-            Timestamp departVehicule = vehiculeTrouve.getDateRetour();
-
-            if (departVehicule.after(departEffectif)) {
-                long attenteVehiculeMillis = departVehicule.getTime() - depart.getTime();
-                // On attend un véhicule qui revient seulement si le décalage reste
-                // dans la fenêtre d'attente du groupe.
-                if (attenteVehiculeMillis > attenteMaxMillis) {
-                    reporterReservationsRestantes(resasRestantes, departEffectif, reservationsNonAssignees);
-                    break;
-                }
-                departEffectif = departVehicule;
-            }
-
-            // Ajouter le véhicule aux utilisés et créer un bin
-            vehiculesUtilises.add(vehicule.getId());
-            int placesRestantes = vehicule.getPlace();
-
-            // Commencer par la réservation de tête (la plus grosse restante).
-            int paxCible = Math.min(premiereResa.passagersRestants, placesRestantes);
-            assignations.add(new GroupAssignment(
-                    premiereResa.reservation,
-                    vehicule.getId(),
-                    paxCible,
-                    departEffectif));
-            placesRestantes -= paxCible;
-            premiereResa.passagersRestants -= paxCible;
-            if (premiereResa.passagersRestants <= 0) {
-                resasRestantes.remove(0);
-            }
-
-            // ----------------------------------------------------
-            // 2b : REMPLIR CE VÉHICULE avant d'en ouvrir un autre
-            // ----------------------------------------------------
-            while (placesRestantes > 0 && !resasRestantes.isEmpty()) {
-                // Trouver la résa qui minimise |nb_pax - places_restantes|
-                int meilleurIdx = trouverResaBestFitPourVehicule(resasRestantes, placesRestantes);
-
-                if (meilleurIdx < 0) {
-                    break; // Aucune résa ne peut rentrer
-                }
-
-                ReservationRestante resaChoisie = resasRestantes.get(meilleurIdx);
-                int passagersAAffectes = Math.min(resaChoisie.passagersRestants, placesRestantes);
-
-                // Créer l'assignation
-                GroupAssignment assignation = new GroupAssignment(
-                        resaChoisie.reservation,
-                        vehicule.getId(),
-                        passagersAAffectes,
-                        departEffectif);
-                assignations.add(assignation);
-
-                // Mettre à jour
-                placesRestantes -= passagersAAffectes;
-                resaChoisie.passagersRestants -= passagersAAffectes;
-
-                // Si la résa est complètement assignée, la retirer de la liste
-                if (resaChoisie.passagersRestants <= 0) {
-                    resasRestantes.remove(meilleurIdx);
-                }
-            }
-
-            // Ajouter le bin avec les places restantes (pour les prochains groupes)
-            if (placesRestantes > 0) {
-                bins.add(new VehiculeBin(vehicule.getId(), placesRestantes, vehicule.getTypeCarburant()));
+            if (resaCourante.passagersRestants <= 0) {
+                resasRestantes.remove(resaCourante);
             }
         }
 
         return assignations;
+    }
+
+    private int trouverMeilleurBinPourReservation(List<VehiculeBin> bins, int passagersRestants) {
+        int meilleurBinIdx = -1;
+        int meilleurEcart = Integer.MAX_VALUE;
+
+        for (int i = 0; i < bins.size(); i++) {
+            VehiculeBin bin = bins.get(i);
+            int placesRestantes = bin.getPlacesRestantes();
+            if (placesRestantes <= 0) {
+                continue;
+            }
+
+            int ecart = Math.abs(placesRestantes - passagersRestants);
+            if (ecart < meilleurEcart) {
+                meilleurEcart = ecart;
+                meilleurBinIdx = i;
+                if (ecart == 0) {
+                    break;
+                }
+            }
+        }
+
+        return meilleurBinIdx;
     }
 
     private void reporterReservationsRestantes(List<ReservationRestante> resasRestantes,
