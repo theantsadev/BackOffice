@@ -162,7 +162,7 @@ public class GroupeAssignationService {
                         resaCourante.passagersRestants,
                         departEffectif,
                         retourInitial,
-                        vehiculesUtilises);
+                        vehiculesUtilises, attenteMaxMillis);
 
                 if (vehiculeTrouve == null) {
                     reportRestantes = true;
@@ -375,7 +375,6 @@ public class GroupeAssignationService {
         }
         return bins;
     }
-
 
     public Timestamp calculerDepartGroupeSelonAssignations(List<GroupAssignment> assignations,
             Timestamp fallback) {

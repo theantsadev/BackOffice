@@ -207,7 +207,6 @@ public class PlanificationService {
                         groupe,
                         reservationsNonAssignees);
 
-
                 Timestamp departGroupeAssigne = groupeAssignationService
                         .calculerDepartGroupeSelonAssignations(assignations, depart);
                 groupeAssignationService.persisterPlanificationsGroupe(assignations, departGroupeAssigne, context);
@@ -234,7 +233,6 @@ public class PlanificationService {
         result.put("tempsAttenteMin", (long) (context.getAttenteMillis() / (60 * 1000)));
         return result;
     }
-
 
     private List<Planification> filtrerPlanificationsParDepart(List<Planification> planifications,
             long departFiltreMillis) {

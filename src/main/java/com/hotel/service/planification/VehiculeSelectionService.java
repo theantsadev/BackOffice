@@ -16,7 +16,6 @@ import com.hotel.model.Vehicule;
 
 public class VehiculeSelectionService {
 
-    private static final long DELAI_ATTENTE_RETOUR_MILLIS = 30L * 60 * 1000;
     private final int sprint6TieBreakerSeed;
 
     public VehiculeSelectionService() {
@@ -330,7 +329,7 @@ public class VehiculeSelectionService {
      * @throws SQLException en cas d'erreur d'accès à la base de données
      */
     public VehiculeRetour trouverVehiculeBestFitAvecAttente(int nbPax, Timestamp dateDepart,
-            Timestamp retour, List<Integer> vehiculesExclus)
+            Timestamp retour, List<Integer> vehiculesExclus, long attenteMaxMillis)
             throws SQLException {
 
         // 1. Essayer de trouver un véhicule disponible immédiatement
@@ -340,7 +339,7 @@ public class VehiculeSelectionService {
         VehiculeRetour vehiculeEnRetour = trouverVehiculeEnRetour(
                 nbPax,
                 dateDepart,
-                DELAI_ATTENTE_RETOUR_MILLIS,
+                attenteMaxMillis,
                 vehiculesExclus);
 
         if (vehiculeEnRetourEstMeilleur(vehiculeImmediat, vehiculeEnRetour, nbPax, dateDepart)) {
