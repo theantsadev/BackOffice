@@ -207,7 +207,6 @@ public class PlanificationService {
                         groupe,
                         reservationsNonAssignees);
 
-                logAssignationsAvantPersistance(depart, retourInitial, assignations, reservationsNonAssignees);
 
                 Timestamp departGroupeAssigne = groupeAssignationService
                         .calculerDepartGroupeSelonAssignations(assignations, depart);
@@ -220,7 +219,6 @@ public class PlanificationService {
         }
 
         List<Planification> planifications = getPlanificationsByDate(date);
-        logEtatAvantOrdresAssignation(planifications, reservationsNonAssignees);
         groupeAssignationService.appliquerOrdresAssignation(planifications, reservationsNonAssignees);
 
         if (departGroupeFiltre != null) {
@@ -237,66 +235,6 @@ public class PlanificationService {
         return result;
     }
 
-    private void logAssignationsAvantPersistance(Timestamp depart,
-            Timestamp retourInitial,
-            List<GroupAssignment> assignations,
-            List<Reservation> reservationsNonAssignees) {
-        System.out.println("[DEBUG][PLANIF] ----- Resultat traiterGroupe avant persistance -----");
-        System.out.println("[DEBUG][PLANIF] departGroupe=" + depart
-                + " | retourInitial=" + retourInitial
-                + " | nbAssignations=" + assignations.size()
-                + " | nbNonAssigneesEnMemoire=" + reservationsNonAssignees.size());
-
-        if (assignations.isEmpty()) {
-            System.out.println("[DEBUG][PLANIF] assignations: aucune");
-        } else {
-            for (GroupAssignment assignation : assignations) {
-                Reservation reservation = assignation.getReservation();
-                System.out.println("[DEBUG][PLANIF] ASSIGNATION"
-                        + " | resa=" + reservation.getId_reservation()
-                        + " | client=" + reservation.getId_client()
-                        + " | hotel=" + reservation.getId_hotel()
-                        + " | paxAssignes=" + assignation.getNbPassagersAssignes()
-                        + " | vehicule=" + assignation.getIdVehicule()
-                        + " | departEffectif=" + assignation.getDateDepart());
-            }
-        }
-
-        if (!reservationsNonAssignees.isEmpty()) {
-            for (Reservation nonAssignee : reservationsNonAssignees) {
-                System.out.println("[DEBUG][PLANIF] NON_ASSIGNEE"
-                        + " | resa=" + nonAssignee.getId_reservation()
-                        + " | client=" + nonAssignee.getId_client()
-                        + " | hotel=" + nonAssignee.getId_hotel()
-                        + " | paxRestants=" + nonAssignee.getNb_passager()
-                        + " | departGroupe=" + nonAssignee.getDate_heure_depart_groupe());
-            }
-        }
-    }
-
-    private void logEtatAvantOrdresAssignation(List<Planification> planifications,
-            List<Reservation> reservationsNonAssignees) {
-        System.out.println("[DEBUG][PLANIF] ----- Etat avant appliquerOrdresAssignation -----");
-        System.out.println("[DEBUG][PLANIF] nbPlanifications=" + planifications.size()
-                + " | nbReservationsNonAssignees=" + reservationsNonAssignees.size());
-
-        for (Planification planification : planifications) {
-            System.out.println("[DEBUG][PLANIF] PLANIF"
-                    + " | planif=" + planification.getIdPlanification()
-                    + " | resa=" + planification.getIdReservation()
-                    + " | vehicule=" + planification.getIdVehicule()
-                    + " | depart=" + planification.getDateHeureDepartAeroport()
-                    + " | retour=" + planification.getDateHeureRetourAeroport()
-                    + " | pax=" + planification.getNbPassager());
-        }
-
-        for (Reservation nonAssignee : reservationsNonAssignees) {
-            System.out.println("[DEBUG][PLANIF] NON_ASSIGNEE_AVANT_ORDRE"
-                    + " | resa=" + nonAssignee.getId_reservation()
-                    + " | departGroupe=" + nonAssignee.getDate_heure_depart_groupe()
-                    + " | pax=" + nonAssignee.getNb_passager());
-        }
-    }
 
     private List<Planification> filtrerPlanificationsParDepart(List<Planification> planifications,
             long departFiltreMillis) {

@@ -7,13 +7,11 @@ import java.sql.SQLException;
 import java.sql.Time;
 import java.sql.Timestamp;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
 import com.hotel.database.DatabaseConnection;
-import com.hotel.model.Reservation;
 import com.hotel.model.Vehicule;
 
 public class VehiculeSelectionService {
@@ -151,95 +149,6 @@ public class VehiculeSelectionService {
         return result;
     }
 
-    public Vehicule choisirVehiculeAvecLookAhead(int nbPax,
-            Timestamp depart,
-            Timestamp retour,
-            List<Integer> vehiculesUtilises,
-            List<Reservation> restantes) throws SQLException {
-        List<Vehicule> candidats = getAllVehiculesLibres(1, depart, retour, vehiculesUtilises);
-        Vehicule meilleurVehicule = null;
-        int meilleurGaspillage = Integer.MAX_VALUE;
-        Map<Integer, Integer> nbTrajetsByVehicule = chargerNombreTrajetsParVehicule(extraireIdsVehicules(candidats));
-
-        for (Vehicule candidat : candidats) {
-            int passagersAffectes = Math.min(nbPax, candidat.getPlace());
-            int placesRestantes = candidat.getPlace() - passagersAffectes;
-            int gaspillage = evaluerGaspillage(placesRestantes, restantes);
-            if (gaspillage < meilleurGaspillage
-                    || (gaspillage == meilleurGaspillage && meilleurVehicule != null
-                            && comparerVehiculesSprint6(candidat, meilleurVehicule, passagersAffectes,
-                                    nbTrajetsByVehicule) < 0)) {
-                meilleurGaspillage = gaspillage;
-                meilleurVehicule = candidat;
-            } else if (gaspillage == meilleurGaspillage && meilleurVehicule == null) {
-                meilleurVehicule = candidat;
-            }
-        }
-
-        return meilleurVehicule;
-    }
-
-    public boolean doitPrendreNouveauVehicule(VehiculeBin binCandidat,
-            Vehicule nouveauVehicule,
-            int passagersRestants) throws SQLException {
-        int passagersAffectesBin = Math.min(passagersRestants, binCandidat.getPlacesRestantes());
-        int passagersAffectesNouveau = Math.min(passagersRestants, nouveauVehicule.getPlace());
-
-        if (passagersAffectesNouveau > passagersAffectesBin) {
-            return true;
-        }
-        if (passagersAffectesNouveau < passagersAffectesBin) {
-            return false;
-        }
-
-        int resteBinApresAssignation = binCandidat.getPlacesRestantes() - passagersAffectesBin;
-        int resteNouveauApresAssignation = nouveauVehicule.getPlace() - passagersAffectesNouveau;
-
-        if (resteNouveauApresAssignation < resteBinApresAssignation) {
-            return true;
-        }
-        if (resteNouveauApresAssignation > resteBinApresAssignation) {
-            return false;
-        }
-
-        Vehicule vehiculeVirtuelBin = new Vehicule();
-        vehiculeVirtuelBin.setId(binCandidat.getIdVehicule());
-        vehiculeVirtuelBin.setPlace(binCandidat.getPlacesRestantes());
-        vehiculeVirtuelBin.setTypeCarburant(binCandidat.getTypeCarburant());
-
-        List<Integer> ids = new ArrayList<>();
-        ids.add(binCandidat.getIdVehicule());
-        ids.add(nouveauVehicule.getId());
-        Map<Integer, Integer> nbTrajetsByVehicule = chargerNombreTrajetsParVehicule(ids);
-        int passagersComparaison = Math.min(passagersRestants,
-                Math.min(binCandidat.getPlacesRestantes(), nouveauVehicule.getPlace()));
-        int comparaison = comparerVehiculesSprint6(
-                nouveauVehicule,
-                vehiculeVirtuelBin,
-                passagersComparaison,
-                nbTrajetsByVehicule);
-        return comparaison < 0;
-    }
-
-    public int trouverMeilleurBin(List<VehiculeBin> bins, int nbPassagers) {
-        int bestIdx = -1;
-        int bestReste = Integer.MAX_VALUE;
-
-        for (int i = 0; i < bins.size(); i++) {
-            int reste = bins.get(i).getPlacesRestantes();
-            int passagersAffectes = Math.min(reste, nbPassagers);
-            if (passagersAffectes <= 0) {
-                continue;
-            }
-            int resteApresAssignation = reste - passagersAffectes;
-            if (resteApresAssignation < bestReste) {
-                bestReste = resteApresAssignation;
-                bestIdx = i;
-            }
-        }
-        return bestIdx;
-    }
-
     public Map<Integer, Integer> chargerNombreTrajetsParVehicule(List<Integer> vehiculeIds) throws SQLException {
         Map<Integer, Integer> nbTrajetsByVehicule = new HashMap<>();
         if (vehiculeIds.isEmpty()) {
@@ -310,22 +219,6 @@ public class VehiculeSelectionService {
         x ^= (x >>> 17);
         x ^= (x << 5);
         return x & 0x7fffffff;
-    }
-
-    private int evaluerGaspillage(int placesRestantes, List<Reservation> restantes) {
-        List<Integer> paxRestants = new ArrayList<>();
-        for (Reservation reservation : restantes) {
-            paxRestants.add(reservation.getNb_passager());
-        }
-
-        Collections.sort(paxRestants);
-        int gaspillage = placesRestantes;
-        for (int pax : paxRestants) {
-            if (pax <= gaspillage) {
-                gaspillage -= pax;
-            }
-        }
-        return gaspillage;
     }
 
     public List<Integer> extraireIdsVehicules(List<Vehicule> vehicules) {
@@ -630,70 +523,6 @@ public class VehiculeSelectionService {
         }
 
         return null; // Aucun véhicule en retour trouvé
-    }
-
-    /**
-     * Trouve le meilleur bin (véhicule déjà ouvert) selon la stratégie Best-Fit.
-     *
-     * Un "bin" représente un véhicule déjà assigné à ce groupe avec des places
-     * restantes.
-     * Cette méthode cherche le bin qui minimise |places_restantes - nb_passagers|.
-     *
-     * Logique Best-Fit pour les bins :
-     * 1. Si un bin a EXACTEMENT assez de places → c'est le meilleur (gaspillage =
-     * 0)
-     * 2. Sinon, on cherche le bin avec le moins de places restantes après
-     * assignation
-     *
-     * Exemple :
-     * - 3 passagers à assigner
-     * - Bin A : 5 places restantes → après = 2 places vides
-     * - Bin B : 3 places restantes → après = 0 places vides (parfait!)
-     * - Bin C : 7 places restantes → après = 4 places vides
-     * → Best-Fit choisit Bin B
-     *
-     * @param bins        liste des véhicules ouverts avec leurs places restantes
-     * @param nbPassagers nombre de passagers à assigner
-     * @return index du meilleur bin, ou -1 si aucun bin ne peut accueillir les
-     *         passagers
-     */
-    public int trouverMeilleurBinBestFit(List<VehiculeBin> bins, int nbPassagers) {
-        int meilleurIdx = -1;
-        int meilleurGaspillage = Integer.MAX_VALUE;
-
-        for (int i = 0; i < bins.size(); i++) {
-            int placesRestantes = bins.get(i).getPlacesRestantes();
-
-            // On ignore les bins sans places disponibles
-            if (placesRestantes <= 0) {
-                continue;
-            }
-
-            // Calcul du nombre de passagers qu'on peut réellement assigner
-            // (limité par les places disponibles)
-            int passagersAffectes = Math.min(placesRestantes, nbPassagers);
-
-            // Si on ne peut assigner personne, on passe au suivant
-            if (passagersAffectes <= 0) {
-                continue;
-            }
-
-            // Gaspillage = places qui resteront vides après assignation
-            int gaspillage = placesRestantes - passagersAffectes;
-
-            // On cherche le gaspillage MINIMAL (Best-Fit)
-            if (gaspillage < meilleurGaspillage) {
-                meilleurGaspillage = gaspillage;
-                meilleurIdx = i;
-
-                // Optimisation : si gaspillage = 0, c'est parfait, on arrête
-                if (gaspillage == 0) {
-                    break;
-                }
-            }
-        }
-
-        return meilleurIdx;
     }
 
     /**

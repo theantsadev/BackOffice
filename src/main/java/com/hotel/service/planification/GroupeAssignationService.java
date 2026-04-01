@@ -376,27 +376,6 @@ public class GroupeAssignationService {
         return bins;
     }
 
-    private GroupAssignment assignerSurBinExistant(Reservation reservation,
-            VehiculeBin bin,
-            int nbPassagersAffectes,
-            Timestamp dateDepart) {
-        bin.decrPlacesRestantes(nbPassagersAffectes);
-        return new GroupAssignment(reservation, bin.getIdVehicule(), nbPassagersAffectes, dateDepart);
-    }
-
-    private GroupAssignment assignerSurNouveauVehicule(Reservation reservation,
-            List<Integer> vehiculesUtilises,
-            List<VehiculeBin> bins,
-            Vehicule vehicule,
-            int nbPassagersAffectes,
-            Timestamp dateDepart) {
-        vehiculesUtilises.add(vehicule.getId());
-        bins.add(new VehiculeBin(
-                vehicule.getId(),
-                vehicule.getPlace() - nbPassagersAffectes,
-                vehicule.getTypeCarburant()));
-        return new GroupAssignment(reservation, vehicule.getId(), nbPassagersAffectes, dateDepart);
-    }
 
     public Timestamp calculerDepartGroupeSelonAssignations(List<GroupAssignment> assignations,
             Timestamp fallback) {
