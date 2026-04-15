@@ -22,16 +22,27 @@ public class GroupeAssignationService {
 
     private final VehiculeSelectionService vehiculeSelectionService;
     private final RouteCalculationService routeCalculationService;
+    private final TimeoutManager timeoutManager;
 
     public GroupeAssignationService() {
         this.vehiculeSelectionService = new VehiculeSelectionService();
         this.routeCalculationService = new RouteCalculationService();
+        this.timeoutManager = new TimeoutManager();
     }
 
     public GroupeAssignationService(VehiculeSelectionService vehiculeSelectionService,
             RouteCalculationService routeCalculationService) {
         this.vehiculeSelectionService = vehiculeSelectionService;
         this.routeCalculationService = routeCalculationService;
+        this.timeoutManager = new TimeoutManager();
+    }
+
+    public GroupeAssignationService(VehiculeSelectionService vehiculeSelectionService,
+            RouteCalculationService routeCalculationService,
+            TimeoutManager timeoutManager) {
+        this.vehiculeSelectionService = vehiculeSelectionService;
+        this.routeCalculationService = routeCalculationService;
+        this.timeoutManager = timeoutManager;
     }
 
     /**
@@ -42,6 +53,59 @@ public class GroupeAssignationService {
      * @return Map contenant les groupes de réservations
      */
     public LinkedHashMap<Long, List<Reservation>> construireGroupesParFenetreAttente(
+            List<Reservation> reservationsTriees,
+            long attenteMillis) {
+        return construireGroupesParFenetreAttente(reservationsTriees, attenteMillis, null);
+    }
+
+    public LinkedHashMap<Long, List<Reservation>> construireGroupesParFenetreAttente(
+            List<Reservation> reservationsTriees,
+            long attenteMillis,
+            Long ancreDisponibiliteMillis) {
+        LinkedHashMap<Long, List<Reservation>> groupes = new LinkedHashMap<>();
+        if (reservationsTriees.isEmpty()) {
+            return groupes;
+        }
+
+        if (ancreDisponibiliteMillis == null) {
+            return construireGroupesDepuisPremiereArrivee(reservationsTriees, attenteMillis);
+        }
+
+        int index = 0;
+        long debutFenetre = ancreDisponibiliteMillis;
+
+        while (index < reservationsTriees.size()) {
+            long finFenetre = debutFenetre + attenteMillis;
+
+            List<Reservation> groupe = new ArrayList<>();
+            while (index < reservationsTriees.size()) {
+                Reservation candidate = reservationsTriees.get(index);
+                long arrivee = candidate.getDate_heure_arrivee().getTime();
+                if (arrivee <= finFenetre) {
+                    groupe.add(candidate);
+                    index++;
+                } else {
+                    break;
+                }
+            }
+
+            if (!groupe.isEmpty()) {
+                groupes.put(debutFenetre, groupe);
+            }
+
+            debutFenetre = finFenetre;
+            if (index < reservationsTriees.size() && reservationsTriees.get(index).getDate_heure_arrivee().getTime() > debutFenetre
+                    && groupe.isEmpty()) {
+                long prochaineArrivee = reservationsTriees.get(index).getDate_heure_arrivee().getTime();
+                long fenetresASauter = Math.max(1, (prochaineArrivee - debutFenetre) / attenteMillis);
+                debutFenetre += fenetresASauter * attenteMillis;
+            }
+        }
+
+        return groupes;
+    }
+
+    private LinkedHashMap<Long, List<Reservation>> construireGroupesDepuisPremiereArrivee(
             List<Reservation> reservationsTriees,
             long attenteMillis) {
         LinkedHashMap<Long, List<Reservation>> groupes = new LinkedHashMap<>();
@@ -106,7 +170,7 @@ public class GroupeAssignationService {
         // ============================================================
         // ÉTAPE 1 : Tri du groupe par nb_passagers DÉCROISSANT
         // ============================================================
-        groupe.sort((a, b) -> Integer.compare(b.getNb_passager(), a.getNb_passager()));
+        trierReservationsPourPriorite(groupe);
 
         // Liste des réservations restantes à traiter (avec leurs passagers restants)
         List<ReservationRestante> resasRestantes = new ArrayList<>();
@@ -114,11 +178,12 @@ public class GroupeAssignationService {
             resasRestantes.add(new ReservationRestante(r, r.getNb_passager()));
         }
 
-        // Liste des véhicules déjà utilisés
+        // Liste des véhicules déjà utilisés dans ce groupe
         List<Integer> vehiculesUtilises = new ArrayList<>();
 
-        // Charger les bins existants (véhicules déjà ouverts sur ce créneau)
-        List<VehiculeBin> bins = chargerBinsExistants(depart, vehiculesUtilises);
+        // Les bins sont seulement intra-groupe : on ne réutilise pas des trajets déjà
+        // persistés d'un groupe précédent.
+        List<VehiculeBin> bins = new ArrayList<>();
 
         // Date de départ effective (peut être ajustée si on attend un véhicule)
         Timestamp departEffectif = depart;
@@ -173,11 +238,6 @@ public class GroupeAssignationService {
                 Timestamp departVehicule = vehiculeTrouve.getDateRetour();
 
                 if (departVehicule.after(departEffectif)) {
-                    long attenteVehiculeMillis = departVehicule.getTime() - depart.getTime();
-                    if (attenteVehiculeMillis > attenteMaxMillis) {
-                        reportRestantes = true;
-                        break;
-                    }
                     departEffectif = departVehicule;
                 }
 
@@ -278,6 +338,13 @@ public class GroupeAssignationService {
 
     private void trierResasRestantesParPaxDesc(List<ReservationRestante> resasRestantes) {
         resasRestantes.sort((a, b) -> {
+            if (a.reservation.isPrioritaire() && !b.reservation.isPrioritaire()) {
+                return -1;
+            }
+            if (!a.reservation.isPrioritaire() && b.reservation.isPrioritaire()) {
+                return 1;
+            }
+
             int cmpPax = Integer.compare(b.passagersRestants, a.passagersRestants);
             if (cmpPax != 0) {
                 return cmpPax;
@@ -295,6 +362,33 @@ public class GroupeAssignationService {
             return Integer.compare(
                     a.reservation.getId_reservation(),
                     b.reservation.getId_reservation());
+        });
+    }
+
+    public void trierReservationsPourPriorite(List<Reservation> reservations) {
+        reservations.sort((a, b) -> {
+            if (a.isPrioritaire() && !b.isPrioritaire()) {
+                return -1;
+            }
+            if (!a.isPrioritaire() && b.isPrioritaire()) {
+                return 1;
+            }
+
+            int cmpPax = Integer.compare(b.getNb_passager(), a.getNb_passager());
+            if (cmpPax != 0) {
+                return cmpPax;
+            }
+
+            Timestamp arriveeA = a.getDate_heure_arrivee();
+            Timestamp arriveeB = b.getDate_heure_arrivee();
+            if (arriveeA != null && arriveeB != null) {
+                int cmpArrivee = arriveeA.compareTo(arriveeB);
+                if (cmpArrivee != 0) {
+                    return cmpArrivee;
+                }
+            }
+
+            return Integer.compare(a.getId_reservation(), b.getId_reservation());
         });
     }
 
@@ -392,16 +486,75 @@ public class GroupeAssignationService {
     public void persisterPlanificationsGroupe(List<GroupAssignment> assignations,
             Timestamp departGroupe,
             PlanificationContext context) throws SQLException {
+        persisterPlanificationsGroupe(assignations, departGroupe, context, false, null);
+    }
+
+    public void persisterPlanificationsGroupe(List<GroupAssignment> assignations,
+            Timestamp departGroupe,
+            PlanificationContext context,
+            boolean dynamique,
+            Integer idRegroupement) throws SQLException {
         if (assignations.isEmpty()) {
             return;
         }
 
-        // Sprint 7 : Calculer les retours par véhicule en tenant compte des dates de
-        // départ individuelles
-        Map<Integer, Timestamp> retourByVehicule = calculerRetoursParVehicule(assignations, departGroupe, context);
-        String sql = "INSERT INTO Planification (id_reservation, id_vehicule, date_heure_depart_aeroport, date_heure_retour_aeroport, nb_passager_assigne) "
+        Map<Integer, Integer> capacitesVehicule = chargerCapacitesVehicule(assignations);
+        Map<Integer, Integer> passagersParVehicule = new HashMap<>();
+        Map<Integer, Timestamp> departInitialByVehicule = new HashMap<>();
+        Map<Integer, Timestamp> derniereArriveeByVehicule = new HashMap<>();
+        Map<Integer, Timestamp> departFinalByVehicule = new HashMap<>();
+        Map<Integer, Boolean> attenteByVehicule = new HashMap<>();
+
+        for (GroupAssignment assignation : assignations) {
+            int idVehicule = assignation.getIdVehicule();
+            Timestamp departInitial = assignation.getDateDepart() != null
+                    ? assignation.getDateDepart()
+                    : departGroupe;
+
+            Timestamp departInitialActuel = departInitialByVehicule.get(idVehicule);
+            if (departInitialActuel == null || departInitial.after(departInitialActuel)) {
+                departInitialByVehicule.put(idVehicule, departInitial);
+            }
+
+            int passagers = passagersParVehicule.getOrDefault(idVehicule, 0) + assignation.getNbPassagersAssignes();
+            passagersParVehicule.put(idVehicule, passagers);
+
+            Timestamp arrivee = assignation.getReservation().getDate_heure_arrivee();
+            if (arrivee != null) {
+                Timestamp derniereArrivee = derniereArriveeByVehicule.get(idVehicule);
+                if (derniereArrivee == null || arrivee.after(derniereArrivee)) {
+                    derniereArriveeByVehicule.put(idVehicule, arrivee);
+                }
+            }
+        }
+
+        for (Map.Entry<Integer, Integer> entry : passagersParVehicule.entrySet()) {
+            int idVehicule = entry.getKey();
+            int passagers = entry.getValue();
+            int capacite = capacitesVehicule.getOrDefault(idVehicule, passagers);
+            int placesRestantes = Math.max(0, capacite - passagers);
+            Timestamp departInitial = departInitialByVehicule.getOrDefault(idVehicule, departGroupe);
+            Timestamp derniereArrivee = derniereArriveeByVehicule.getOrDefault(idVehicule, departInitial);
+
+            Timestamp departAttendu;
+            boolean attenteEffective;
+            if (timeoutManager.doitAttendreDepart(placesRestantes) && !departInitial.after(derniereArrivee)) {
+                departAttendu = timeoutManager.calculerDepartAvecAttente(departInitial, placesRestantes,
+                        context.getAttenteMillis());
+                attenteEffective = departAttendu.after(derniereArrivee);
+            } else {
+                departAttendu = departInitial.after(derniereArrivee) ? departInitial : derniereArrivee;
+                attenteEffective = false;
+            }
+
+            departFinalByVehicule.put(idVehicule, departAttendu);
+            attenteByVehicule.put(idVehicule, attenteEffective);
+        }
+
+        Map<Integer, Timestamp> retourByVehicule = calculerRetoursParVehicule(assignations, departFinalByVehicule, context);
+        String sql = "INSERT INTO Planification (id_reservation, id_vehicule, date_heure_depart_aeroport, date_heure_retour_aeroport, nb_passager_assigne, is_dynamique, en_attente, id_regroupement) "
                 +
-                "VALUES (?, ?, ?, ?, ?)";
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
 
         Set<Integer> vehiculesARecalculer = new HashSet<>();
         try (Connection conn = DatabaseConnection.getConnection();
@@ -410,10 +563,12 @@ public class GroupeAssignationService {
             conn.setAutoCommit(false);
             try {
                 for (GroupAssignment assignation : assignations) {
-                    // Sprint 7 : Utiliser la date de départ de l'assignation si disponible
-                    Timestamp departEffectif = assignation.getDateDepart() != null
-                            ? assignation.getDateDepart()
-                            : departGroupe;
+                    Timestamp departEffectif = departFinalByVehicule.get(assignation.getIdVehicule());
+                    if (departEffectif == null) {
+                        departEffectif = assignation.getDateDepart() != null
+                                ? assignation.getDateDepart()
+                                : departGroupe;
+                    }
 
                     Timestamp retour = retourByVehicule.get(assignation.getIdVehicule());
                     if (retour == null) {
@@ -422,9 +577,16 @@ public class GroupeAssignationService {
 
                     stmt.setInt(1, assignation.getReservation().getId_reservation());
                     stmt.setInt(2, assignation.getIdVehicule());
-                    stmt.setTimestamp(3, departEffectif); // ← Utilise la date effective
+                    stmt.setTimestamp(3, departEffectif);
                     stmt.setTimestamp(4, retour);
                     stmt.setInt(5, assignation.getNbPassagersAssignes());
+                    stmt.setBoolean(6, dynamique);
+                    stmt.setBoolean(7, attenteByVehicule.getOrDefault(assignation.getIdVehicule(), false));
+                    if (idRegroupement != null) {
+                        stmt.setInt(8, idRegroupement);
+                    } else {
+                        stmt.setNull(8, java.sql.Types.INTEGER);
+                    }
                     stmt.addBatch();
                     vehiculesARecalculer.add(assignation.getIdVehicule());
                 }
@@ -440,7 +602,8 @@ public class GroupeAssignationService {
         }
 
         for (Integer idVehicule : vehiculesARecalculer) {
-            recalculerRetourVehicule(idVehicule, departGroupe, context);
+            Timestamp departVehicule = departFinalByVehicule.getOrDefault(idVehicule, departGroupe);
+            recalculerRetourVehicule(idVehicule, departVehicule, context);
         }
     }
 
@@ -449,40 +612,27 @@ public class GroupeAssignationService {
      * Sprint 7 : Utilise la date de départ de chaque assignation si disponible.
      */
     private Map<Integer, Timestamp> calculerRetoursParVehicule(List<GroupAssignment> assignations,
-            Timestamp departDefaut,
+            Map<Integer, Timestamp> departByVehiculeFinal,
             PlanificationContext context) throws SQLException {
 
-        // Regrouper les hôtels et trouver la date de départ par véhicule
         Map<Integer, List<Integer>> hotelsByVehicule = new HashMap<>();
-        Map<Integer, Timestamp> departByVehicule = new HashMap<>();
 
         for (GroupAssignment assignation : assignations) {
             int idVehicule = assignation.getIdVehicule();
-
-            // Ajouter l'hôtel à la liste du véhicule
             List<Integer> hotels = hotelsByVehicule.computeIfAbsent(idVehicule, k -> new ArrayList<>());
             int idHotel = assignation.getReservation().getId_hotel();
             if (!hotels.contains(idHotel)) {
                 hotels.add(idHotel);
             }
-
-            // Sprint 7 : Trouver la date de départ pour ce véhicule (prendre la plus
-            // tardive si plusieurs)
-            Timestamp departAssignation = assignation.getDateDepart() != null
-                    ? assignation.getDateDepart()
-                    : departDefaut;
-
-            Timestamp departActuel = departByVehicule.get(idVehicule);
-            if (departActuel == null || departAssignation.after(departActuel)) {
-                departByVehicule.put(idVehicule, departAssignation);
-            }
         }
 
-        // Calculer le retour pour chaque véhicule
         Map<Integer, Timestamp> retourByVehicule = new HashMap<>();
         for (Map.Entry<Integer, List<Integer>> entry : hotelsByVehicule.entrySet()) {
             int idVehicule = entry.getKey();
-            Timestamp depart = departByVehicule.get(idVehicule);
+            Timestamp depart = departByVehiculeFinal.get(idVehicule);
+            if (depart == null) {
+                throw new SQLException("Date de depart introuvable pour le vehicule " + idVehicule);
+            }
 
             List<Integer> hotelsTries = routeCalculationService.trierHotelsParDistanceAeroport(entry.getValue(),
                     context);
@@ -491,6 +641,40 @@ public class GroupeAssignationService {
         }
 
         return retourByVehicule;
+    }
+
+    private Map<Integer, Integer> chargerCapacitesVehicule(List<GroupAssignment> assignations) throws SQLException {
+        Map<Integer, Integer> capacites = new HashMap<>();
+        if (assignations.isEmpty()) {
+            return capacites;
+        }
+
+        Set<Integer> ids = new HashSet<>();
+        for (GroupAssignment assignation : assignations) {
+            ids.add(assignation.getIdVehicule());
+        }
+
+        StringBuilder sql = new StringBuilder("SELECT id, place FROM Vehicule WHERE id IN (");
+        int idx = 0;
+        for (int i = 0; i < ids.size(); i++) {
+            sql.append(idx++ == 0 ? "?" : ",?");
+        }
+        sql.append(")");
+
+        try (Connection conn = DatabaseConnection.getConnection();
+                PreparedStatement stmt = conn.prepareStatement(sql.toString())) {
+            int i = 1;
+            for (Integer id : ids) {
+                stmt.setInt(i++, id);
+            }
+            try (ResultSet rs = stmt.executeQuery()) {
+                while (rs.next()) {
+                    capacites.put(rs.getInt("id"), rs.getInt("place"));
+                }
+            }
+        }
+
+        return capacites;
     }
 
     public void recalculerRetourVehicule(int idVehicule, Timestamp depart,
@@ -651,6 +835,7 @@ public class GroupeAssignationService {
         copie.setDate_heure_depart_groupe(source.getDate_heure_depart_groupe());
         copie.setId_hotel(source.getId_hotel());
         copie.setNom_hotel(source.getNom_hotel());
+        copie.setPrioritaire(source.isPrioritaire());
         return copie;
     }
 }

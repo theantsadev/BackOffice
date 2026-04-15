@@ -1,3 +1,4 @@
+com\hotel\model\Regroupement.class
 com\hotel\service\planification\VehiculeBin.class
 com\hotel\Main.class
 com\hotel\service\planification\VehiculeSelectionService.class
@@ -13,17 +14,21 @@ com\hotel\model\Distance.class
 com\hotel\model\Parametre.class
 com\hotel\service\planification\GroupeAssignationService$ReservationRestante.class
 com\hotel\service\planification\GroupAssignment.class
+com\hotel\service\planification\TimeoutManager.class
 com\hotel\controller\ReservationController.class
 com\hotel\service\planification\GroupeAssignationService.class
 com\hotel\service\planification\AssignOrderItem.class
 com\hotel\service\HotelService.class
 com\hotel\controller\VehiculeController.class
+com\hotel\service\planification\ChevauchementService.class
 com\hotel\model\Vehicule.class
 com\hotel\service\planification\RouteMetrics.class
 com\hotel\model\Planification.class
 com\hotel\service\DistanceService.class
 com\hotel\service\VehiculeService.class
 com\hotel\service\ReservationService.class
+com\hotel\service\planification\RetourVehiculeHandler.class
+com\hotel\service\planification\RegroupementService.class
 com\hotel\service\ParametreService.class
 com\hotel\model\Token.class
 com\hotel\service\TokenService.class

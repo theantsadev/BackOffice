@@ -13,6 +13,8 @@ DELETE FROM Vehicule;
 DELETE FROM Reservation;
 DELETE FROM Hotel;
 
+DELETE FROM Regroupement;
+
 -- Réinitialisation des séquences
 ALTER SEQUENCE planification_id_planification_seq RESTART WITH 1;
 ALTER SEQUENCE distance_id_distance_seq RESTART WITH 1;

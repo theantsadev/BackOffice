@@ -4,6 +4,7 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Time;
 import java.sql.Timestamp;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -17,10 +18,12 @@ import com.hotel.model.Planification;
 import com.hotel.model.Reservation;
 import com.hotel.service.planification.GroupAssignment;
 import com.hotel.service.planification.GroupeAssignationService;
+import com.hotel.service.planification.RegroupementService;
 import com.hotel.service.planification.PlanificationContext;
 import com.hotel.service.planification.RouteCalculationService;
 import com.hotel.service.planification.RouteMetrics;
 import com.hotel.service.planification.VehiculeSelectionService;
+import com.hotel.model.Regroupement;
 
 public class PlanificationService {
 
@@ -30,6 +33,7 @@ public class PlanificationService {
     private final VehiculeSelectionService vehiculeSelectionService;
     private final RouteCalculationService routeCalculationService;
     private final GroupeAssignationService groupeAssignationService;
+    private final RegroupementService regroupementService;
 
     public PlanificationService() {
         this.parametreService = new ParametreService();
@@ -38,6 +42,7 @@ public class PlanificationService {
         this.vehiculeSelectionService = new VehiculeSelectionService();
         this.routeCalculationService = new RouteCalculationService();
         this.groupeAssignationService = new GroupeAssignationService();
+        this.regroupementService = new RegroupementService();
     }
 
     public boolean estVoitureDisponible(int idVehicule, Timestamp dateHeureDepart, Timestamp dateHeureRetour)
@@ -76,8 +81,9 @@ public class PlanificationService {
         List<Planification> planifications = new ArrayList<>();
 
         String sql = "SELECT p.*, r.id_client, COALESCE(p.nb_passager_assigne, r.nb_passager) as nb_passager_planifie, r.id_hotel, "
-                +
-                "h.nom as nom_hotel, v.reference as reference_vehicule, " +
+            +
+            "h.nom as nom_hotel, v.reference as reference_vehicule, " +
+            "CASE WHEN p.is_dynamique THEN 'DYNAMIQUE' ELSE 'NORMAL' END as type_groupe, " +
                 "COALESCE(d.valeur, -1) as distance_aeroport " +
                 "FROM Planification p " +
                 "JOIN Reservation r ON p.id_reservation = r.id_reservation " +
@@ -106,6 +112,11 @@ public class PlanificationService {
                     planification.setNomHotel(rs.getString("nom_hotel"));
                     planification.setReferenceVehicule(rs.getString("reference_vehicule"));
                     planification.setDistanceAeroport(rs.getDouble("distance_aeroport"));
+                    planification.setDynamique(rs.getBoolean("is_dynamique"));
+                    planification.setEnAttente(rs.getBoolean("en_attente"));
+                    int idRegroupement = rs.getInt("id_regroupement");
+                    planification.setIdRegroupement(rs.wasNull() ? null : idRegroupement);
+                    planification.setTypeGroupe(rs.getString("type_groupe"));
                     planifications.add(planification);
                 }
             }
@@ -175,8 +186,12 @@ public class PlanificationService {
 
         // Formation de groupes de réservations selon la fenêtre d'attente définie dans
         // le contexte
+        Timestamp premiereDisponibiliteVehicule = chargerPremiereDisponibiliteVehicule(date);
         LinkedHashMap<Long, List<Reservation>> groupes = groupeAssignationService
-                .construireGroupesParFenetreAttente(aTraiter, context.getAttenteMillis());
+            .construireGroupesParFenetreAttente(
+                aTraiter,
+                context.getAttenteMillis(),
+                premiereDisponibiliteVehicule != null ? premiereDisponibiliteVehicule.getTime() : null);
 
         // Initialisation d'une liste pour stocker les réservations qui n'ont pas pu
         // être assignées
@@ -191,10 +206,13 @@ public class PlanificationService {
             // Récupération des reservations du groupe
             List<Reservation> groupe = new ArrayList<>(entry.getValue());
 
-            // On traite les reservations non assignées du groupe précédent en les ajoutant
-            // au groupe actuel pour tenter de les assigner avant de les reconsidérer comme
-            // non assignées
-            groupe.addAll(reservationsNonAssignees);
+            // Sprint 8 : Les non assignees sont prioritaires et prependees au groupe courant.
+            for (Reservation nonAssignee : reservationsNonAssignees) {
+                nonAssignee.setPrioritaire(true);
+            }
+            List<Reservation> groupeAvecPriorite = new ArrayList<>(reservationsNonAssignees);
+            groupeAvecPriorite.addAll(groupe);
+            groupe = groupeAvecPriorite;
             reservationsNonAssignees.clear();
 
             try {
@@ -207,9 +225,16 @@ public class PlanificationService {
                         groupe,
                         reservationsNonAssignees);
 
-                Timestamp departGroupeAssigne = groupeAssignationService
+                if (!assignations.isEmpty()) {
+                    Timestamp departGroupeAssigne = groupeAssignationService
                         .calculerDepartGroupeSelonAssignations(assignations, depart);
-                groupeAssignationService.persisterPlanificationsGroupe(assignations, departGroupeAssigne, context);
+                    Regroupement regroupementNormal = regroupementService.creerGroupeNormal(depart, departGroupeAssigne);
+                    groupeAssignationService.persisterPlanificationsGroupe(assignations,
+                        departGroupeAssigne,
+                        context,
+                        false,
+                        regroupementNormal.getId());
+                }
             } catch (Exception e) {
                 int refId = groupe.isEmpty() ? -1 : groupe.get(0).getId_reservation();
                 System.err.println("Erreur de planification du groupe (reservation " + refId + "): " + e.getMessage());
@@ -262,12 +287,17 @@ public class PlanificationService {
      * Construit un contexte de planification automatique (paramètres, hôtel, etc.)
      * pour être utilisé dans les différentes étapes de la planification
      */
-    private PlanificationContext buildAutoPlanContext() throws SQLException {
+    public PlanificationContext buildAutoPlanContext() throws SQLException {
         double vitesseKmh = parametreService.getValeurByCle("vitesse_moyenne_kmh", 30.0);
         double tempsAttenteMin = parametreService.getValeurByCle("temps_attente_min", 30.0);
         long attenteMillis = (long) (tempsAttenteMin * 60 * 1000);
         Hotel aeroport = hotelService.getAeroport();
         return new PlanificationContext(vitesseKmh, attenteMillis, aeroport);
+    }
+
+    public List<Reservation> getReservationsNonAssigneesByDate(java.util.Date date) throws SQLException {
+        List<Reservation> reservations = reservationService.getReservationByDate(date);
+        return filtrerReservationsNonAssignees(reservations);
     }
 
     /*
@@ -321,5 +351,21 @@ public class PlanificationService {
         }
 
         return passagersAssignes;
+    }
+
+    private Timestamp chargerPremiereDisponibiliteVehicule(java.util.Date date) throws SQLException {
+        String sql = "SELECT MIN(heure_debut_dispo) as min_dispo FROM Vehicule";
+        try (Connection conn = DatabaseConnection.getConnection();
+                PreparedStatement stmt = conn.prepareStatement(sql);
+                ResultSet rs = stmt.executeQuery()) {
+            if (rs.next()) {
+                Time minDispo = rs.getTime("min_dispo");
+                if (minDispo != null) {
+                    return Timestamp.valueOf(
+                            new java.sql.Date(date.getTime()).toLocalDate().atTime(minDispo.toLocalTime()));
+                }
+            }
+        }
+        return null;
     }
 }

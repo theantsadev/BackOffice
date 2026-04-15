@@ -2,11 +2,13 @@ C:\Users\Mike\Documents\Etude\S5\MrNaina\projet-prepa\BackOffice\src\main\java\c
 C:\Users\Mike\Documents\Etude\S5\MrNaina\projet-prepa\BackOffice\src\main\java\com\hotel\model\Distance.java
 C:\Users\Mike\Documents\Etude\S5\MrNaina\projet-prepa\BackOffice\src\main\java\com\hotel\service\planification\VehiculeBin.java
 C:\Users\Mike\Documents\Etude\S5\MrNaina\projet-prepa\BackOffice\src\main\java\com\hotel\Main.java
+C:\Users\Mike\Documents\Etude\S5\MrNaina\projet-prepa\BackOffice\src\main\java\com\hotel\service\planification\ChevauchementService.java
 C:\Users\Mike\Documents\Etude\S5\MrNaina\projet-prepa\BackOffice\src\main\java\com\hotel\controller\HotelController.java
 C:\Users\Mike\Documents\Etude\S5\MrNaina\projet-prepa\BackOffice\src\main\java\com\hotel\service\ParametreService.java
 C:\Users\Mike\Documents\Etude\S5\MrNaina\projet-prepa\BackOffice\src\main\java\com\hotel\service\planification\VehiculeRetour.java
 C:\Users\Mike\Documents\Etude\S5\MrNaina\projet-prepa\BackOffice\src\main\java\com\hotel\controller\PlanificationController.java
 C:\Users\Mike\Documents\Etude\S5\MrNaina\projet-prepa\BackOffice\src\main\java\com\hotel\service\VehiculeService.java
+C:\Users\Mike\Documents\Etude\S5\MrNaina\projet-prepa\BackOffice\src\main\java\com\hotel\service\planification\RetourVehiculeHandler.java
 C:\Users\Mike\Documents\Etude\S5\MrNaina\projet-prepa\BackOffice\src\main\java\com\hotel\service\planification\RouteMetrics.java
 C:\Users\Mike\Documents\Etude\S5\MrNaina\projet-prepa\BackOffice\src\main\java\com\hotel\controller\ReservationController.java
 C:\Users\Mike\Documents\Etude\S5\MrNaina\projet-prepa\BackOffice\src\main\java\com\hotel\service\planification\PlanificationContext.java
@@ -15,6 +17,7 @@ C:\Users\Mike\Documents\Etude\S5\MrNaina\projet-prepa\BackOffice\src\main\java\c
 C:\Users\Mike\Documents\Etude\S5\MrNaina\projet-prepa\BackOffice\src\main\java\com\hotel\service\PlanificationService.java
 C:\Users\Mike\Documents\Etude\S5\MrNaina\projet-prepa\BackOffice\src\main\java\com\hotel\database\DatabaseConnection.java
 C:\Users\Mike\Documents\Etude\S5\MrNaina\projet-prepa\BackOffice\src\main\java\com\hotel\model\Reservation.java
+C:\Users\Mike\Documents\Etude\S5\MrNaina\projet-prepa\BackOffice\src\main\java\com\hotel\service\planification\TimeoutManager.java
 C:\Users\Mike\Documents\Etude\S5\MrNaina\projet-prepa\BackOffice\src\main\java\com\hotel\service\ReservationService.java
 C:\Users\Mike\Documents\Etude\S5\MrNaina\projet-prepa\BackOffice\src\main\java\com\hotel\model\Token.java
 C:\Users\Mike\Documents\Etude\S5\MrNaina\projet-prepa\BackOffice\src\main\java\com\hotel\service\planification\AssignOrderItem.java
@@ -27,5 +30,7 @@ C:\Users\Mike\Documents\Etude\S5\MrNaina\projet-prepa\BackOffice\src\main\java\c
 C:\Users\Mike\Documents\Etude\S5\MrNaina\projet-prepa\BackOffice\src\main\java\com\hotel\controller\TokenController.java
 C:\Users\Mike\Documents\Etude\S5\MrNaina\projet-prepa\BackOffice\src\main\java\com\hotel\service\TokenService.java
 C:\Users\Mike\Documents\Etude\S5\MrNaina\projet-prepa\BackOffice\src\main\java\com\hotel\controller\PageController.java
+C:\Users\Mike\Documents\Etude\S5\MrNaina\projet-prepa\BackOffice\src\main\java\com\hotel\model\Regroupement.java
 C:\Users\Mike\Documents\Etude\S5\MrNaina\projet-prepa\BackOffice\src\main\java\com\hotel\model\Vehicule.java
 C:\Users\Mike\Documents\Etude\S5\MrNaina\projet-prepa\BackOffice\src\main\java\com\hotel\service\HotelService.java
+C:\Users\Mike\Documents\Etude\S5\MrNaina\projet-prepa\BackOffice\src\main\java\com\hotel\service\planification\RegroupementService.java

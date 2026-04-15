@@ -65,6 +65,17 @@ CREATE TABLE Parametre (
    PRIMARY KEY (id_parametre)
 );
 
+-- Table Regroupement (Sprint 8)
+CREATE TABLE Regroupement (
+   id SERIAL,
+   date_debut TIMESTAMP NOT NULL,
+   date_fin TIMESTAMP NOT NULL,
+   type VARCHAR(10) NOT NULL,
+   date_trigger TIMESTAMP,
+   id_vehicule_trigger INTEGER,
+   PRIMARY KEY (id)
+);
+
 -- Table Distance
 CREATE TABLE Distance (
    id_distance SERIAL,
@@ -86,9 +97,13 @@ CREATE TABLE Planification (
    date_heure_depart_aeroport TIMESTAMP NOT NULL,
    date_heure_retour_aeroport TIMESTAMP NOT NULL,
    nb_passager_assigne INTEGER,
+   is_dynamique BOOLEAN DEFAULT FALSE,
+   en_attente BOOLEAN DEFAULT FALSE,
+   id_regroupement INTEGER,
    PRIMARY KEY (id_planification),
    CONSTRAINT fk_reservation FOREIGN KEY (id_reservation) REFERENCES Reservation(id_reservation),
-   CONSTRAINT fk_vehicule FOREIGN KEY (id_vehicule) REFERENCES Vehicule(id)
+   CONSTRAINT fk_vehicule FOREIGN KEY (id_vehicule) REFERENCES Vehicule(id),
+   CONSTRAINT fk_planification_regroupement FOREIGN KEY (id_regroupement) REFERENCES Regroupement(id)
 );
 
 -- ===========================================

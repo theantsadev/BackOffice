@@ -354,6 +354,13 @@ public class VehiculeSelectionService {
             return vehiculeEnRetour;
         }
 
+        // Sprint 8: si aucun véhicule n'est disponible dans la fenêtre d'attente,
+        // prendre le prochain véhicule réellement en retour.
+        VehiculeRetour prochainRetour = trouverProchainVehiculeEnRetour(nbPax, dateDepart, vehiculesExclus);
+        if (prochainRetour != null) {
+            return prochainRetour;
+        }
+
         // 3. Sinon, trouver la prochaine heure de disponibilité
         // Note: on passe 0 pour nbPaxMin car on gère la scission dans
         // trouverVehiculeBestFit
@@ -370,6 +377,57 @@ public class VehiculeSelectionService {
         Vehicule vehicule = trouverVehiculeBestFit(nbPax, prochaineDispo, nouveauRetour, vehiculesExclus);
         if (vehicule != null) {
             return new VehiculeRetour(vehicule, prochaineDispo);
+        }
+
+        return null;
+    }
+
+    private VehiculeRetour trouverProchainVehiculeEnRetour(int nbPax,
+            Timestamp departSouhaite,
+            List<Integer> vehiculesExclus) throws SQLException {
+        StringBuilder sql = new StringBuilder(
+                "SELECT v.id, v.reference, v.place, v.type_carburant, " +
+                        "       MAX(p.date_heure_retour_aeroport) as date_retour_max " +
+                        "FROM Vehicule v " +
+                        "JOIN Planification p ON p.id_vehicule = v.id " +
+                        "WHERE v.place >= ? " +
+                        "  AND p.date_heure_retour_aeroport > ? ");
+
+        if (!vehiculesExclus.isEmpty()) {
+            sql.append("  AND v.id NOT IN (");
+            for (int i = 0; i < vehiculesExclus.size(); i++) {
+                sql.append(i == 0 ? "?" : ",?");
+            }
+            sql.append(") ");
+        }
+
+        sql.append("GROUP BY v.id, v.reference, v.place, v.type_carburant ");
+        sql.append("ORDER BY date_retour_max ASC, (v.place - ?) ASC ");
+        sql.append("LIMIT 1");
+
+        try (Connection conn = DatabaseConnection.getConnection();
+                PreparedStatement stmt = conn.prepareStatement(sql.toString())) {
+            int idx = 1;
+            stmt.setInt(idx++, nbPax);
+            stmt.setTimestamp(idx++, departSouhaite);
+
+            for (Integer idExclu : vehiculesExclus) {
+                stmt.setInt(idx++, idExclu);
+            }
+
+            stmt.setInt(idx++, nbPax);
+
+            try (ResultSet rs = stmt.executeQuery()) {
+                if (rs.next()) {
+                    Vehicule vehicule = new Vehicule();
+                    vehicule.setId(rs.getInt("id"));
+                    vehicule.setReference(rs.getString("reference"));
+                    vehicule.setPlace(rs.getInt("place"));
+                    vehicule.setTypeCarburant(rs.getString("type_carburant"));
+                    Timestamp dateRetour = rs.getTimestamp("date_retour_max");
+                    return new VehiculeRetour(vehicule, dateRetour);
+                }
+            }
         }
 
         return null;
