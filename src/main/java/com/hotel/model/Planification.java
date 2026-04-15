@@ -22,6 +22,10 @@ public class Planification {
     private int ordreAssignGroupe; // ordre d'assignation dans le groupe de depart
     private int ordreAssignGlobal; // ordre d'assignation global sur la journee
     private int ordreDepot;          // ordre de dépôt : 1 = plus proche de l'aéroport
+    private boolean dynamique;
+    private boolean enAttente;
+    private Integer idRegroupement;
+    private String typeGroupe;
 
     public Planification() {
     }
@@ -169,5 +173,37 @@ public class Planification {
 
     public void setOrdreDepot(int ordreDepot) {
         this.ordreDepot = ordreDepot;
+    }
+
+    public boolean isDynamique() {
+        return dynamique;
+    }
+
+    public void setDynamique(boolean dynamique) {
+        this.dynamique = dynamique;
+    }
+
+    public boolean isEnAttente() {
+        return enAttente;
+    }
+
+    public void setEnAttente(boolean enAttente) {
+        this.enAttente = enAttente;
+    }
+
+    public Integer getIdRegroupement() {
+        return idRegroupement;
+    }
+
+    public void setIdRegroupement(Integer idRegroupement) {
+        this.idRegroupement = idRegroupement;
+    }
+
+    public String getTypeGroupe() {
+        return typeGroupe;
+    }
+
+    public void setTypeGroupe(String typeGroupe) {
+        this.typeGroupe = typeGroupe;
     }
 }

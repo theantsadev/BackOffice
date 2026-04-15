@@ -12,6 +12,7 @@ public class Reservation {
     private String nom_hotel;
     private int ordre_assign_groupe;
     private int ordre_assign_global;
+    private boolean prioritaire;
 
     public Reservation() {
     }
@@ -95,5 +96,13 @@ public class Reservation {
 
     public void setOrdre_assign_global(int ordre_assign_global) {
         this.ordre_assign_global = ordre_assign_global;
+    }
+
+    public boolean isPrioritaire() {
+        return prioritaire;
+    }
+
+    public void setPrioritaire(boolean prioritaire) {
+        this.prioritaire = prioritaire;
     }
 }

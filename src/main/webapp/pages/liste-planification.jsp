@@ -417,6 +417,8 @@
                             <th>Hotel</th>
                             <th>Vehicule</th>
                             <th>Passagers</th>
+                            <th>Type Groupe</th>
+                            <th>Etat</th>
                             <th>Covoiturage</th>
                             <th>Ordre</th>
                             <th>Ordre Assign Groupe</th>
@@ -449,6 +451,7 @@
                             <th>ID Reservation</th>
                             <th>Client</th>
                             <th>Passagers</th>
+                            <th>Priorite</th>
                             <th>Date/Heure Arrivee</th>
                             <th>Hotel</th>
                             <th>Depart Estime Groupe</th>
@@ -489,8 +492,7 @@
         const date = urlParams.get('date') || new Date().toISOString().split('T')[0];
         
         document.getElementById('selectedDate').textContent = date;
-        
-        const token = localStorage.getItem('api_token') || sessionStorage.getItem('api_token') || '';
+
         let allDepartGroupsCache = [];
 
         function formatFr(dateLike) {
@@ -583,13 +585,6 @@
             const trajetsTableBody = document.getElementById('trajetsTableBody');
             const searchInput = document.getElementById('searchInput');
             const groupFilter = document.getElementById('groupFilter');
-            
-            if (!token || token.trim() === '') {
-                loadingDiv.style.display = 'none';
-                errorDiv.innerHTML = '<i class="fas fa-exclamation-triangle me-2"></i>Token manquant. <a href="${pageContext.request.contextPath}/pages/gestion-tokens">Generez un token</a> puis rechargez la page.';
-                errorDiv.style.display = 'block';
-                return;
-            }
 
             loadingDiv.style.display = 'block';
             errorDiv.style.display = 'none';
@@ -728,6 +723,11 @@
                             var ordreBadge = '<span class="badge-ordre" style="background:' + ordreColor + ';">' + ordreVal + '</span>';
 
                             var row = document.createElement('tr');
+                            var typeGroupe = p.typeGroupe || (p.dynamique ? 'DYNAMIQUE' : 'NORMAL');
+                            var typeBadgeClass = typeGroupe === 'DYNAMIQUE' ? 'bg-warning text-dark' : 'bg-secondary';
+                            var etatBadge = p.enAttente
+                                ? '<span class="badge bg-warning text-dark">en attente</span>'
+                                : '<span class="badge bg-success">depart immediat</span>';
                             row.innerHTML = '' +
                                 '<td>' + escapeHtml(p.idPlanification) + '</td>' +
                                 '<td>' + escapeHtml(p.idReservation) + '</td>' +
@@ -735,6 +735,8 @@
                                 '<td>' + escapeHtml(p.nomHotel || '-') + '</td>' +
                                 '<td><code>' + escapeHtml(p.referenceVehicule || p.idVehicule) + '</code></td>' +
                                 '<td>' + escapeHtml(p.nbPassager || '-') + '</td>' +
+                                '<td><span class="badge ' + typeBadgeClass + '">' + escapeHtml(typeGroupe) + '</span></td>' +
+                                '<td>' + etatBadge + '</td>' +
                                 '<td>' + covBadge + '</td>' +
                                 '<td>' + ordreBadge + '</td>' +
                                 '<td><span class="badge bg-primary">#' + escapeHtml(p.ordreAssignGroupe || '-') + '</span></td>' +
@@ -872,10 +874,14 @@
                             var departEstime = r.date_heure_depart_groupe ? formatFr(r.date_heure_depart_groupe) : '-';
 
                             var row = document.createElement('tr');
+                            var prioriteBadge = r.prioritaire
+                                ? '<span class="badge bg-danger">prioritaire</span>'
+                                : '<span class="badge bg-secondary">normale</span>';
                             row.innerHTML = '' +
                                 '<td>' + escapeHtml(r.id_reservation) + '</td>' +
                                 '<td><strong>' + escapeHtml(r.id_client || '-') + '</strong></td>' +
                                 '<td>' + escapeHtml(r.nb_passager) + '</td>' +
+                                '<td>' + prioriteBadge + '</td>' +
                                 '<td><small>' + escapeHtml(dateArrivee) + '</small></td>' +
                                 '<td>' + escapeHtml(r.nom_hotel || '-') + '</td>' +
                                 '<td><small>' + escapeHtml(departEstime) + '</small></td>' +
@@ -888,6 +894,11 @@
                     }
 
                 }, function(code, message) {
+                    if (code === 403) {
+                        clearStoredToken();
+                        loadPlanifications();
+                        return;
+                    }
                     errorDiv.textContent = message;
                     errorDiv.style.display = 'block';
                 });

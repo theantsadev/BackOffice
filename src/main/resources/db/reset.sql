@@ -44,6 +44,7 @@ CREATE TABLE Vehicule (
    reference VARCHAR(50) NOT NULL UNIQUE,
    place INTEGER NOT NULL,
    type_carburant CHAR(1) NOT NULL CHECK (type_carburant IN ('D', 'E')),
+   heure_debut_dispo TIME,
    PRIMARY KEY (id)
 );
 
@@ -62,6 +63,17 @@ CREATE TABLE Parametre (
    valeur DOUBLE PRECISION NOT NULL,
    unite VARCHAR(50),
    PRIMARY KEY (id_parametre)
+);
+
+-- Table Regroupement (Sprint 8)
+CREATE TABLE Regroupement (
+   id SERIAL,
+   date_debut TIMESTAMP NOT NULL,
+   date_fin TIMESTAMP NOT NULL,
+   type VARCHAR(10) NOT NULL,
+   date_trigger TIMESTAMP,
+   id_vehicule_trigger INTEGER,
+   PRIMARY KEY (id)
 );
 
 -- Table Distance
@@ -85,9 +97,13 @@ CREATE TABLE Planification (
    date_heure_depart_aeroport TIMESTAMP NOT NULL,
    date_heure_retour_aeroport TIMESTAMP NOT NULL,
    nb_passager_assigne INTEGER,
+   is_dynamique BOOLEAN DEFAULT FALSE,
+   en_attente BOOLEAN DEFAULT FALSE,
+   id_regroupement INTEGER,
    PRIMARY KEY (id_planification),
    CONSTRAINT fk_reservation FOREIGN KEY (id_reservation) REFERENCES Reservation(id_reservation),
-   CONSTRAINT fk_vehicule FOREIGN KEY (id_vehicule) REFERENCES Vehicule(id)
+   CONSTRAINT fk_vehicule FOREIGN KEY (id_vehicule) REFERENCES Vehicule(id),
+   CONSTRAINT fk_planification_regroupement FOREIGN KEY (id_regroupement) REFERENCES Regroupement(id)
 );
 
 -- ===========================================
@@ -118,12 +134,12 @@ INSERT INTO Reservation (nb_passager, date_heure_arrivee, id_client, id_hotel) V
     ( 1, '2026-02-18 22:55:00', '8640', 4);
 
 -- Insertion des véhicules
-INSERT INTO Vehicule (reference, place, type_carburant) VALUES
-    ('VH-001', 4, 'E'),
-    ('VH-002', 5, 'D'),
-    ('VH-003', 7, 'D'),
-    ('VH-004', 2, 'E'),
-    ('VH-005', 9, 'D');
+INSERT INTO Vehicule (reference, place, type_carburant, heure_debut_dispo) VALUES
+    ('VH-001', 4, 'E', '00:00:00'),
+    ('VH-002', 5, 'D', '00:00:00'),
+    ('VH-003', 7, 'D', '00:00:00'),
+    ('VH-004', 2, 'E', '00:00:00'),
+    ('VH-005', 9, 'D', '00:00:00');
 
 -- Insertion des paramètres initiaux
 INSERT INTO Parametre (cle, valeur, unite) VALUES
