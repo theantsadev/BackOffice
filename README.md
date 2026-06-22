@@ -131,5 +131,11 @@ cp target/backoffice.war $TOMCAT_HOME/webapps/
 
 ## 📸 Screenshots
 
-### Administration des Navettes
-![Planification Interface]([SCREENSHOT])
+### Liste des réservations
+![Liste réservations](captures/liste-resa-28-02-2026.PNG)
+
+### Liste des véhicules
+![Liste véhicules](captures/liste-vehicule.PNG)
+
+### Résultat de planification
+![Résultat planification](captures/resultat-planification-28-02-2026.PNG)
