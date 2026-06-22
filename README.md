@@ -1,85 +1,18 @@
-# Hotel BackOffice - Système de Gestion des Réservations
+# Hotel BackOffice - Système de Planification & d'Administration 🏨 ⚙️
 
-Application de gestion des réservations hôtelières développée avec un framework personnalisé et PostgreSQL.
+[![Java](https://img.shields.io/badge/Java-17-ED8B00?style=for-the-badge&logo=openjdk&logoColor=white)](#)
+[![Custom Framework](https://img.shields.io/badge/Framework-Custom_Servlet-blue?style=for-the-badge&logo=java&logoColor=white)](#)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-17-316192?style=for-the-badge&logo=postgresql&logoColor=white)](#)
+[![Tomcat](https://img.shields.io/badge/Tomcat-10.1-F8DC75?style=for-the-badge&logo=apachetomcat&logoColor=black)](#)
+[![Maven](https://img.shields.io/badge/Maven-3.9-C71A36?style=for-the-badge&logo=apachemaven&logoColor=white)](#)
 
-## Prérequis
+Le **BackOffice** est l'application d'administration centrale du système de navettes. Il permet aux administrateurs de planifier les trajets de navettes d'aéroport, de gérer la flotte de véhicules, et de suivre les réservations hôtelières. 
 
-- Java JDK 8 ou supérieur
-- Apache Tomcat 9 ou supérieur
-- PostgreSQL 12 ou supérieur
-- Maven 3.6 ou supérieur
+Il est développé à l'aide d'un **framework Web MVC Java personnalisé** (`framework.jar`) fournissant un routage d'annotations et une gestion d'API REST légère.
 
-## Installation
+---
 
-### 1. Configuration de la base de données
-
-```bash
-# Créer la base de données
-createdb hotel_db
-
-# Exécuter le script de création des tables
-psql -U postgres -d hotel_db -f base.sql
-
-# Insérer les données initiales des hôtels
-psql -U postgres -d hotel_db -f insert-hotels.sql
-```
-
-### 2. Configuration de l'application
-
-Modifier le fichier `src/main/resources/database.properties` avec vos paramètres de connexion :
-
-```properties
-db.url=jdbc:postgresql://localhost:5432/hotel_db
-db.user=postgres
-db.password=votre_mot_de_passe
-```
-
-### 3. Compilation et déploiement
-
-```bash
-# Compiler le projet avec Maven
-mvn clean package
-
-# Le fichier WAR sera généré dans target/backoffice.war
-# Copier ce fichier dans le dossier webapps de Tomcat
-cp target/backoffice.war $TOMCAT_HOME/webapps/
-
-# Démarrer Tomcat
-$TOMCAT_HOME/bin/startup.sh  # Linux/Mac
-$TOMCAT_HOME/bin/startup.bat  # Windows
-```
-
-### 4. Accès à l'application
-
-Ouvrir dans un navigateur : `http://localhost:8080/backoffice/`
-
-## Fonctionnalités
-
-### Pages Web
-
-- **Page d'accueil** (`/`) : Menu principal avec accès aux fonctionnalités
-- **Formulaire de réservation** (`/formulaire-reservation`) : Création de nouvelles réservations
-- **Liste des réservations** (`/liste-reservations`) : Consultation et filtrage des réservations
-
-### API REST
-
-#### Hôtels
-
-- `GET /hotels` : Récupérer la liste de tous les hôtels
-
-#### Réservations
-
-- `GET /reservations` : Récupérer toutes les réservations
-- `GET /reservations?date=YYYY-MM-DD` : Filtrer les réservations par date
-- `POST /reservations` : Créer une nouvelle réservation
-
-**Paramètres POST :**
-- `id_client` : Identifiant client (4 chiffres)
-- `nb_passager` : Nombre de passagers
-- `date_heure_arrivee` : Date et heure d'arrivée (format: YYYY-MM-DDTHH:mm)
-- `id_hotel` : ID de l'hôtel
-
-## Structure du projet
+## 🏗️ Structure du Projet (BO)
 
 ```
 BackOffice/
@@ -88,77 +21,115 @@ BackOffice/
 │   │   ├── java/
 │   │   │   └── com/
 │   │   │       └── hotel/
-│   │   │           ├── controller/       # Contrôleurs REST et pages
-│   │   │           ├── model/            # Modèles de données
-│   │   │           ├── service/          # Logique métier
-│   │   │           └── database/         # Connexion à la base de données
+│   │   │           ├── controller/       # Contrôleurs REST et pages (Framework Annotations)
+│   │   │           ├── model/            # Modèles métier et entités
+│   │   │           ├── service/          # Logique métier et algorithmes d'attribution
+│   │   │           └── database/         # Gestionnaire de connexion PostgreSQL
 │   │   ├── resources/
-│   │   │   └── database.properties       # Configuration base de données
+│   │   │   └── database.properties       # Configuration de connexion à la base
 │   │   └── webapp/
 │   │       ├── WEB-INF/
-│   │       │   └── web.xml              # Configuration web
-│   │       ├── index.jsp                # Page d'accueil
-│   │       ├── formulaire-reservation.jsp
-│   │       ├── liste-reservations.jsp
+│   │       │   └── web.xml               # Configuration de Tomcat
+│   │       ├── index.jsp                # Tableau de bord principal
+│   │       ├── formulaire-planification.jsp
+│   │       ├── liste-planification.jsp
+│   │       ├── liste-reservation-non-assignees.jsp
 │   │       └── error.jsp
 ├── lib/
-│   └── framework.jar                     # Framework personnalisé
-├── base.sql                              # Script création tables
-├── insert-hotels.sql                     # Script insertion hôtels
-└── pom.xml                              # Configuration Maven
+│   └── framework.jar                     # Framework MVC propriétaire compilé
+├── build.bat                             # Script Windows de compilation & déploiement automatique
+├── pom.xml                               # Fichier de build Maven
+└── projet_hotel.sql                      # Script d'import de base de données PostgreSQL
 ```
 
-## Technologies utilisées
+---
 
-- **Backend** : Java 8, Servlets, JSP
-- **Frontend** : HTML5, CSS3, Bootstrap 5, JavaScript
-- **Base de données** : PostgreSQL
-- **Build** : Maven
-- **Serveur** : Apache Tomcat
-- **Framework** : Framework personnalisé (framework.jar)
+## 🛠️ Stack Technique
 
-## Caractéristiques de l'interface
+*   **Runtime** : Java 17.
+*   **Framework** : MVC Custom Java (Servlets, JSP, Annotations customisées).
+*   **Base de Données** : PostgreSQL 17.
+*   **Frontend** : HTML5, CSS3, Bootstrap 5, Vanilla JavaScript.
+*   **Build & Serveur** : Maven 3.9 & Apache Tomcat 10.1+.
 
-- Design moderne et professionnel
-- Interface responsive (compatible mobile et desktop)
-- Formulaires avec validation côté client et serveur
-- Messages d'erreur et de succès clairs
-- Filtrage dynamique des réservations
-- Chargement asynchrone des données (AJAX)
+---
 
-## Notes importantes
+## 🚀 Fonctionnalités & API
 
-- L'application ne nécessite pas d'authentification (sans protection)
-- L'ID client est une saisie libre de 4 chiffres
-- Les dates sont au format ISO pour assurer la compatibilité
-- Toutes les heures sont gérées avec le fuseau horaire du serveur
+### 💻 Interfaces d'Administration
+*   **Tableau de Bord** (`/`) : Menu d'accueil.
+*   **Formulaire de Planification** (`/formulaire-planification`) : Recherche par date pour planifier les navettes (`getPlanificationsByDate(Date date)`).
+*   **File d'Attente** (`/liste-reservation-non-assignees`) : Affiche les arrivées de vol sans navette. Permet de déclencher l'assignation automatique.
 
-## Dépannage
+### 📐 Algorithme d'Assignation
+L'assignation applique de façon synchrone les règles métier suivantes :
+1.  **Optimisation de l'espace** : Choix du véhicule dont la capacité est supérieure ou égale au nombre de passagers, en minimisant l'espace vide.
+2.  **Choix Énergétique** : Priorité aux motorisations **Diesel** (`type_carburant = 'D'`) en cas d'égalité de capacité disponible.
+3.  **Vérification de Disponibilité** : Aucun trajet du véhicule ne doit chevaucher le créneau horaire `[Départ Aéroport, Retour Aéroport]`.
+    *   *Départ* = `Arrivée Vol` - `Durée Trajet`
+    *   *Retour* = `Arrivée Vol` + `Durée Trajet`
+    *   *Durée Trajet* = `Distance` / `Vitesse Moyenne (30 km/h)`
 
-### Erreur de connexion à la base de données
+### 🔌 API REST
 
-Vérifier que :
-- PostgreSQL est démarré
-- Les paramètres de connexion dans `database.properties` sont corrects
-- L'utilisateur a les droits sur la base de données
+#### Hôtels
+-   `GET /hotels` : Liste de l'ensemble des hôtels.
 
-### Erreur 404
+#### Réservations
+-   `GET /reservations` : Récupère la liste de toutes les réservations.
+-   `GET /reservations?date=YYYY-MM-DD` : Filtre les réservations pour une date donnée.
+-   `POST /reservations` : Crée une nouvelle réservation.
+    *   *Paramètres* : `id_client` (4 chiffres), `nb_passager`, `date_heure_arrivee` (ISO: YYYY-MM-DDTHH:mm), `id_hotel`.
 
-Vérifier que :
-- Le fichier WAR est bien déployé dans Tomcat
-- L'URL contient le nom de contexte correct : `/backoffice/`
-- Tomcat est démarré
+---
 
-### Erreur de compilation
+## 🔀 Workflow Git & Rôles
 
-Vérifier que :
-- Le fichier `framework.jar` est présent dans le dossier `lib/`
-- Maven peut accéder au fichier JAR
-- Java JDK est correctement configuré
+Le BackOffice suit la politique d'intégration de l'équipe :
+*   Les développements se font sur des branches nommées `Feature/` (ex. `Feature/AssignationAlgorithme`).
+*   Toute intégration sur `main` s'effectue via une **Merge Request (MR)** après révision et approbation par le **Team Lead** (rotation Mike / Vicky / Jordi).
+*   Le déploiement final s'effectue sur la branche `release/prod` (hébergée sur Railway), disposant d'un schéma PostgreSQL dédié. Les hotfixes de production sont répercutés via du **Cherry-Picking**.
 
-## Support
+*(Voir le [README principal à la racine](../README.md) pour plus de détails sur le cycle complet).*
 
-Pour toute question ou problème, consulter la documentation du framework ou contacter le support technique.
+---
 
-## accès à l'application
--> # http://localhost:8080/backoffice/pages/
+## 💾 Installation et Lancement
+
+### 1. Base de données
+```bash
+createdb hotel_db
+psql -U postgres -d hotel_db -f projet_hotel.sql
+```
+
+### 2. Configuration
+Modifier `src/main/resources/database.properties` avec vos identifiants PostgreSQL.
+
+### 3. Compilation et Déploiement
+
+#### Automatique (Windows) :
+Double-cliquez sur `build.bat` pour nettoyer, packager le WAR et le copier sur Tomcat.
+
+#### Manuel :
+```bash
+mvn clean package
+cp target/backoffice.war $TOMCAT_HOME/webapps/
+```
+
+### 🔗 Accès
+[http://localhost:8080/backoffice/pages/](http://localhost:8080/backoffice/pages/)
+
+---
+
+## 🛠️ Dépannage (Troubleshooting)
+
+*   **Erreur 404** : Vérifiez que Tomcat est démarré et que le dossier webapps contient bien `backoffice.war` ou le répertoire extrait `backoffice/`.
+*   **Erreur de compilation Framework** : Le framework custom `framework.jar` doit être présent dans le dossier `/lib`. Maven l'importe via un `<scope>system</scope>`.
+*   **Erreur de Driver PGSQL** : Si des erreurs de connexion SQL surviennent au démarrage de Tomcat, assurez-vous que les dépendances Jackson et PostgreSQL sont bien résolues par Maven.
+
+---
+
+## 📸 Screenshots
+
+### Administration des Navettes
+![Planification Interface]([SCREENSHOT])
